@@ -365,6 +365,42 @@ class NeteaseSource(QObject):
 
         self.fetching = False
 
+        # ----------------------------------------------------
+        # 防止歌词请求期间发生切歌
+        #
+        # 歌词请求是在后台线程中进行的。
+        # 如果请求期间网易云已经切换歌曲，
+        # 当前请求返回的歌词就不再属于正在播放的歌曲。
+        # ----------------------------------------------------
+
+        current_song, current_artist = (
+            NetEaseMusic.get_current_song()
+        )
+
+        current_song_key = (
+            current_song.strip().lower(),
+            current_artist.strip().lower()
+        ) if current_song else None
+
+        result_song_key = (
+            song.strip().lower(),
+            artist.strip().lower()
+        )
+
+        if current_song_key != result_song_key:
+            print(
+                f"[网易云] 歌词返回时歌曲已变化："
+                f"{song} - {artist}"
+                f" → "
+                f"{current_song} - {current_artist}"
+            )
+
+            # 当前歌曲已经变化。
+            # 不显示旧歌曲歌词，下一轮 poll 会重新获取新歌歌词。
+            self.current_song_key = None
+
+            return
+
         if status != "ok":
 
             print(
