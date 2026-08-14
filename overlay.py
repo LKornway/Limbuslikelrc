@@ -64,6 +64,10 @@ class LyricsOverlay(QWidget):
             self.apply_lyrics
         )
 
+        self.netease_source.lyrics_cleared.connect(
+            self.clear_lyrics
+        )
+
         # ----------------------------------------------------
         # 播放 / 暂停状态（SMTC）
         # ----------------------------------------------------
@@ -181,6 +185,28 @@ class LyricsOverlay(QWidget):
         # update_lyrics() 的 while 循环会自动把这段时间内
         # 该出现的歌词一次性创建出来。
         self.current_time = start_offset
+
+    # ========================================================
+    # 清除当前歌词
+    # ========================================================
+
+    def clear_lyrics(self):
+
+        # ----------------------------------------------------
+        # 歌曲发生变化时立即清除上一首歌词
+        #
+        # 不修改播放时间，只清除当前歌词对象。
+        # 新歌词准备完成后由 apply_lyrics() 重新建立。
+        # ----------------------------------------------------
+
+        self.lyrics = []
+
+        self.active_lyrics.clear()
+
+        self.next_index = 0
+
+        self.update()
+
 
     # ========================================================
     # 接收 SMTCWatcher 的结果

@@ -275,6 +275,9 @@ class NeteaseSource(QObject):
     # song, artist
     lyrics_ready = Signal(list, float, str, str)
 
+    # 当前歌曲发生变化时，立即通知界面清除上一首歌词
+    lyrics_cleared = Signal()
+
     def __init__(self, poll_interval=NETEASE_POLL_INTERVAL, parent=None):
 
         super().__init__(parent)
@@ -323,6 +326,15 @@ class NeteaseSource(QObject):
             return
 
         self.current_song_key = song_key
+
+        # ----------------------------------------------------
+        # 歌曲发生变化
+        #
+        # 立即清除上一首歌词，避免新歌词获取期间
+        # 屏幕继续显示上一首歌曲的字幕。
+        # ----------------------------------------------------
+
+        self.lyrics_cleared.emit()
 
         print(
             f"[网易云] 检测到新歌曲：{song} - {artist}"
