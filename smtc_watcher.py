@@ -1,3 +1,10 @@
+"""
+Windows SMTC 播放状态监听模块。
+
+通过 Windows System Media Transport Controls
+监听网易云音乐的播放状态，并通过 Qt 信号通知其他模块。
+"""
+
 import asyncio
 import threading
 
@@ -11,15 +18,15 @@ from winrt.windows.media.control import (
 )
 
 
-# ============================================================
-# SMTC 播放/暂停监听
-#
-# winrt 的异步 API 需要跑在 asyncio 事件循环里，
-# 所以单独开一个后台线程专门跑这个循环。
-# 对外只暴露 is_playing_changed 一个信号。
-# ============================================================
-
+# WinRT 异步 API 需要运行在 asyncio 事件循环中，
+# 因此单独创建后台线程运行事件循环，避免阻塞 Qt 主线程。
 class SMTCWatcher(QObject):
+    """
+    Windows SMTC 播放状态监听器。
+
+    在后台线程中运行 WinRT 异步事件循环，
+    并通过信号通知播放状态变化。
+    """
 
     is_playing_changed = Signal(bool)
 
@@ -30,7 +37,11 @@ class SMTCWatcher(QObject):
         self._start()
 
     def _start(self):
+        """
+        启动后台线程运行 SMTC 异步监听。
+        """
 
+        # 在线程中创建独立的 asyncio 事件循环。
         def runner():
 
             try:
@@ -50,6 +61,12 @@ class SMTCWatcher(QObject):
         ).start()
 
     async def _watch(self):
+        """
+        获取网易云 SMTC 会话并监听播放状态变化。
+
+        找到网易云播放会话后，注册播放状态变化回调，
+        并同步发送启动时的初始播放状态。
+        """
 
         manager = (
             await MediaManager.request_async()
@@ -59,6 +76,7 @@ class SMTCWatcher(QObject):
 
         session = None
 
+        # 查找网易云音乐对应的 SMTC 播放会话。
         for candidate in sessions:
             if candidate.source_app_user_model_id == "cloudmusic.exe":
                 session = candidate
@@ -73,7 +91,7 @@ class SMTCWatcher(QObject):
 
             return
 
-
+        # SMTC 播放状态变化时，将状态转换为布尔值并发送给 Qt。
         def on_playback_changed(sender, args):
 
             info = sender.get_playback_info()
@@ -92,8 +110,8 @@ class SMTCWatcher(QObject):
             on_playback_changed
         )
 
-        # 启动时先同步一次当前的真实状态，
-        # 不然要等下一次状态变化才会知道
+        # 启动时先同步当前播放状态，
+        # 否则需要等下一次状态变化后才能获得初始状态。
         initial_info = session.get_playback_info()
 
         self.is_playing_changed.emit(
@@ -106,5 +124,6 @@ class SMTCWatcher(QObject):
             "[SMTC] 播放/暂停监听已启动"
         )
 
+        # 保持 asyncio 事件循环运行，使 SMTC 事件回调持续有效。
         while True:
             await asyncio.sleep(1)

@@ -1,3 +1,10 @@
+"""
+网易云音乐歌词来源模块。
+
+负责检测当前播放歌曲、获取歌词数据，
+并通过信号向其他模块提供歌词更新事件。
+"""
+
 import re
 import time
 import threading
@@ -15,22 +22,22 @@ from config import (
 from lrc_parser import parse_lrc_text
 
 
-# ============================================================
-# 网易云音乐自动获取
-#
-# 参考 TempuraYMY0728/Limbus-Like-Lyric-Simulator：
-# 1. 查找 cloudmusic.exe
-# 2. 读取网易云主窗口标题
-# 3. 从「歌名 - 歌手」中提取歌曲信息
-# 4. 调用网易云搜索接口获取歌曲
-# 5. 调用网易云歌词接口获取 LRC
-# ============================================================
-
 class NetEaseBridge(QObject):
+    """
+    网易云歌词请求结果的信号桥接。
+
+    用于后台请求完成后向主线程发送结果。
+    """
+
     result = Signal(str, str, str, str)
 
 
 class NetEaseMusic:
+    """
+    网易云音乐数据接口。
+
+    负责歌词搜索以及歌词获取。
+    """
 
     PROCESS_NAME = "cloudmusic.exe"
 
@@ -46,6 +53,13 @@ class NetEaseMusic:
 
     @staticmethod
     def get_all_player_pids():
+        """
+        获取当前运行中的网易云音乐进程 PID。
+
+        Returns:
+            网易云音乐进程 PID 列表。
+            未找到进程时返回空列表。
+        """
 
         try:
             import psutil
@@ -79,10 +93,10 @@ class NetEaseMusic:
     @staticmethod
     def get_song_from_all_windows():
         """
-        不再寻找第一个 cloudmusic.exe。
-        扫描所有网易云进程的窗口，寻找类似：
-        歌名 - 歌手
-        的标题。
+        从网易云窗口标题中解析当前歌曲信息。
+
+        扫描所有网易云窗口，并解析
+        “歌曲名 - 歌手”的标题格式。
         """
 
         try:
@@ -93,6 +107,7 @@ class NetEaseMusic:
             print("[网易云] 缺少 pywin32，请执行：pip install pywin32")
             return None, None
 
+        # 匹配窗口标题格式：歌曲名 - 歌手
         pattern = re.compile(
             r"^(.+?)\s*-\s*(.+?)$"
         )
@@ -103,6 +118,7 @@ class NetEaseMusic:
 
         candidates = []
 
+        # 遍历所有窗口，查找网易云音乐窗口标题
         def callback(hwnd, _):
 
             try:
@@ -164,12 +180,21 @@ class NetEaseMusic:
 
     @staticmethod
     def fetch_lyrics(song, artist=""):
+        """
+        根据歌曲信息获取 LRC 歌词。
+
+        Args:
+            song: 歌曲名称。
+            artist: 歌手名称。
+
+        Returns:
+            LRC 歌词文本，获取失败返回 None。
+        """
 
         keyword = f"{song} {artist}".strip()
 
         try:
-
-            # 第一步：网易云搜索
+            # 搜索歌曲
             search_url = "https://music.163.com/api/search/get"
 
             response = requests.get(
@@ -210,7 +235,7 @@ class NetEaseMusic:
                 f"[网易云] song_id={song_id}"
             )
 
-            # 第二步：获取歌词
+            # 获取歌词
             lyric_url = "https://music.163.com/api/song/lyric"
 
             lyric_response = requests.get(
@@ -260,25 +285,28 @@ class NetEaseMusic:
         return None
 
 
-# ============================================================
-# 歌词来源服务
-#
-# 对外只暴露一个信号：lyrics_ready。
-# 「识别新歌曲 -> 抓歌词 -> 延迟补偿」的全部细节都封装在这里，
-# 使用方（LyricsOverlay）不需要知道网易云是怎么被识别出来的。
-# ============================================================
-
 class NeteaseSource(QObject):
+    """
+    网易云歌词来源管理器。
 
-    # lyrics: list[LRCLine]
-    # start_offset: 延迟补偿后 current_time 应该从哪一秒开始
-    # song, artist
+    负责轮询歌曲状态、获取歌词以及发送歌词事件。
+    """
+
+    # 参数：
+    # lyrics: 解析后的歌词列表
+    # start_offset: 歌词显示起始偏移时间
+    # song, artist: 当前歌曲信息
     lyrics_ready = Signal(list, float, str, str)
 
     # 当前歌曲发生变化时，立即通知界面清除上一首歌词
     lyrics_cleared = Signal()
 
     def __init__(self, poll_interval=NETEASE_POLL_INTERVAL, parent=None):
+        """
+        初始化歌词来源服务。
+
+        创建轮询定时器，并准备歌词请求状态。
+        """
 
         super().__init__(parent)
 
@@ -303,11 +331,12 @@ class NeteaseSource(QObject):
         # 用来在歌词准备好后计算需要补偿多少延迟。
         self.song_detect_time = None
 
-    # ========================================================
-    # 轮询：识别当前播放的歌曲
-    # ========================================================
-
     def poll(self):
+        """
+        检查当前播放歌曲是否发生变化。
+
+        检测到新歌曲后异步获取歌词。
+        """
 
         if self.fetching:
             return
@@ -327,12 +356,10 @@ class NeteaseSource(QObject):
 
         self.current_song_key = song_key
 
-        # ----------------------------------------------------
         # 歌曲发生变化
         #
         # 立即清除上一首歌词，避免新歌词获取期间
         # 屏幕继续显示上一首歌曲的字幕。
-        # ----------------------------------------------------
 
         self.lyrics_cleared.emit()
 
@@ -344,6 +371,7 @@ class NeteaseSource(QObject):
 
         self.fetching = True
 
+        # 在线程中执行歌词请求，避免阻塞 Qt 主线程
         def worker():
 
             lrc = NetEaseMusic.fetch_lyrics(
@@ -363,10 +391,6 @@ class NeteaseSource(QObject):
             daemon=True
         ).start()
 
-    # ========================================================
-    # 抓取结果 + 延迟补偿
-    # ========================================================
-
     def _on_fetch_done(
         self,
         song,
@@ -374,16 +398,26 @@ class NeteaseSource(QObject):
         lrc_text,
         status
     ):
+        """
+        处理后台歌词请求结果。
+
+        根据请求状态解析歌词，
+        并通过信号发送给显示层。
+
+        Args:
+            song: 歌曲名称。
+            artist: 歌手名称。
+            lrc_text: LRC 歌词文本。
+            status: 请求结果状态。
+        """
 
         self.fetching = False
 
-        # ----------------------------------------------------
         # 防止歌词请求期间发生切歌
         #
         # 歌词请求是在后台线程中进行的。
-        # 如果请求期间网易云已经切换歌曲，
+        # 如果请求期间已经切换歌曲，
         # 当前请求返回的歌词就不再属于正在播放的歌曲。
-        # ----------------------------------------------------
 
         current_song, current_artist = (
             NetEaseMusic.get_current_song()
@@ -431,13 +465,9 @@ class NeteaseSource(QObject):
 
             return
 
-        # ----------------------------------------------------
         # 延迟补偿：
-        #
-        # 从「识别到新歌曲开始播放」到「歌词准备好」这段时间
-        # 里，歌曲已经在真实播放了。直接把这段耗时算出来，
-        # 交给使用方作为播放起点。
-        # ----------------------------------------------------
+        # 计算歌词加载期间歌曲已经播放的时间，
+        # 作为歌词时间轴起始偏移。
 
         if self.song_detect_time is not None:
 
@@ -458,15 +488,12 @@ class NeteaseSource(QObject):
             )
         )
 
-        # ----------------------------------------------------
         # 手动延迟补偿
-        #
         # 自动补偿负责弥补歌词读取过程产生的延迟，
         # 手动补偿则用于用户根据实际听感进行微调。
         #
         # 正数：歌词提前
         # 负数：歌词延后
-        # ----------------------------------------------------
 
         start_offset = (
                 delay
