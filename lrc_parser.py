@@ -9,6 +9,26 @@ import re
 
 from models import LRCLine
 
+# 常见非歌词元信息行：作词/作曲/编曲等
+_META_LINE_RE = re.compile(
+    r"^("
+    r"作词|作曲|编曲|作詞|詞|曲|编|"
+    r"演唱|歌手|演唱者|原唱|翻唱|"
+    r"混音|混缩|制作人|监制|出品|出品人|"
+    r"录音|和声|吉他|贝斯|鼓|弦乐|"
+    r"封面|插画|策划|制作|特别鸣谢|"
+    r"OP|ED|歌词"
+    r")\s*[:：]"
+)
+
+
+def _is_meta_line(text: str) -> bool:
+    """
+    判断是否为作词/作曲等元信息行。
+    """
+
+    return bool(_META_LINE_RE.match(text.strip()))
+
 
 def parse_lrc_text(lrc_text):
     """
@@ -26,9 +46,6 @@ def parse_lrc_text(lrc_text):
 
     result = []
 
-    # 支持一行包含多个时间标签
-    # 例：[00:12.34][00:15.67]歌词
-    # 匹配 LRC 时间标签，例如：[01:23.45]
     pattern = re.compile(
         r"\[(\d+):(\d+(?:\.\d+)?)\]"
     )
@@ -55,19 +72,20 @@ def parse_lrc_text(lrc_text):
         if not text:
             continue
 
+        # 跳过作词/作曲等非歌词文本
+        if _is_meta_line(text):
+            continue
+
         for match in matches:
 
             minutes = int(match.group(1))
             seconds = float(match.group(2))
-
             timestamp = minutes * 60 + seconds
 
             result.append(
                 LRCLine(timestamp, text)
             )
 
-    result.sort(
-        key=lambda item: item.timestamp
-    )
+    result.sort(key=lambda item: item.timestamp)
 
     return result
