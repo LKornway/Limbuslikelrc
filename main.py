@@ -8,7 +8,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
-from lyric_app.ui.overlay import LyricsOverlay
+from ui.overlay import LyricsOverlay
 
 
 def main():

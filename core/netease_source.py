@@ -18,7 +18,7 @@ from config import (
     LYRIC_MANUAL_OFFSET,
 )
 
-from lyric_app.core.lrc_parser import parse_lrc_text
+from core.lrc_parser import parse_lrc_text
 
 
 class NetEaseBridge(QObject):
