@@ -463,18 +463,19 @@ class LyricsOverlay(QWidget):
             MAX_ANGLE
         )
 
-        bounds_width, bounds_height = (
-            self.calculate_bounds(
-                lines,
-                angle
-            )
+        bounds_width, bounds_height, origin_ox, origin_oy = (
+            self.calculate_bounds(lines, angle)
         )
 
-        # 在屏幕范围内寻找歌词位置。
-        x, y = self.find_position(
+        # find_position 返回的是包围盒左上角
+        box_x, box_y = self.find_position(
             bounds_width,
             bounds_height
         )
+
+        # 绘制原点 = 包围盒左上角 - 原点偏移
+        x = box_x - origin_ox
+        y = box_y - origin_oy
 
         # 为每个字符保存固定的生成位置和出现时间。
         characters = []
@@ -849,38 +850,26 @@ class LyricsOverlay(QWidget):
                 )
 
         if not points:
-
             return (
                 100,
-                self.line_height
+                self.line_height,
+                0.0,
+                0.0,
             )
 
-        min_x = min(
-            p[0]
-            for p in points
-        )
+        min_x = min(p[0] for p in points)
+        max_x = max(p[0] for p in points)
+        min_y = min(p[1] for p in points)
+        max_y = max(p[1] for p in points)
 
-        max_x = max(
-            p[0]
-            for p in points
-        )
-
-        min_y = min(
-            p[1]
-            for p in points
-        )
-
-        max_y = max(
-            p[1]
-            for p in points
-        )
+        # 预留描边、阴影和抖动的边距
+        pad = SCREEN_MARGIN + SHAKE_INTENSITY + 6
 
         return (
-            max_x - min_x
-            + SCREEN_MARGIN * 2,
-
-            max_y - min_y
-            + SCREEN_MARGIN * 2
+            (max_x - min_x) + pad * 2,
+            (max_y - min_y) + pad * 2,
+            min_x - pad,
+            min_y - pad,
         )
 
 
