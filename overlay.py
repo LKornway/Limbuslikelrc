@@ -162,6 +162,7 @@ class LyricsOverlay(QWidget):
         # 该时间点之前应该已经出现的歌词。
         self.current_time = start_offset
         self._has_external_position = True
+        self._resync_lyrics_to_time()
 
 
     def clear_lyrics(self):
@@ -229,14 +230,59 @@ class LyricsOverlay(QWidget):
     def _resync_lyrics_to_time(self):
         """
         按当前时间轴重建已显示歌词。
+
+        只恢复当前仍处于显示/淡出窗口内的句子，
+        避免拖动进度条后一次性铺满历史歌词。
         """
 
         self.active_lyrics.clear()
         self.next_index = 0
 
-        # update_lyrics() 会根据 current_time
-        # 一次性补齐该时间点前应出现的歌词。
-        self.update_lyrics()
+        if not self.lyrics:
+            self.update()
+            return
+
+        t = self.current_time
+        visible_indices = []
+
+        for index, line in enumerate(self.lyrics):
+
+            # 尚未到点的句子留给后续 update_lyrics 创建
+            if line.timestamp > t:
+                break
+
+            start_time = line.timestamp - 0.2
+
+            if index + 1 < len(self.lyrics):
+                next_time = self.lyrics[index + 1].timestamp
+                desired_end = next_time + OVERLAP_DURATION
+                max_end = start_time + MAX_LYRIC_LIFETIME
+                min_end = start_time + MIN_LYRIC_LIFETIME
+                end_time = max(min(desired_end, max_end), min_end)
+            else:
+                end_time = start_time + MAX_LYRIC_LIFETIME
+
+            # 已完全结束的句子跳过
+            if t >= end_time:
+                continue
+
+            visible_indices.append(index)
+
+        # 只保留最近若干句，避免瞬间铺满
+        if len(visible_indices) > MAX_ACTIVE_LINES:
+            visible_indices = visible_indices[-MAX_ACTIVE_LINES:]
+
+        for index in visible_indices:
+            self.create_lyric(index)
+
+        # 下一次正常推进从“当前时间之后的第一句”开始
+        self.next_index = 0
+        while (
+                self.next_index < len(self.lyrics)
+                and self.lyrics[self.next_index].timestamp <= t
+        ):
+            self.next_index += 1
+
         self.update()
 
 
