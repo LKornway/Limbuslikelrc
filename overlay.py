@@ -43,7 +43,7 @@ from config import (
 )
 from models import CharacterState, LyricObject
 from netease_source import NeteaseSource
-from smtc_watcher import SMTCWatcher
+from cloudmusic_watcher import CloudMusicWatcher
 
 
 class LyricsOverlay(QWidget):
@@ -69,14 +69,30 @@ class LyricsOverlay(QWidget):
             self.clear_lyrics
         )
 
-        self.smtc_watcher = SMTCWatcher()
+        self.cloudmusic_watcher = CloudMusicWatcher()
 
-        self.smtc_watcher.is_playing_changed.connect(
+        self.netease_source.set_position_provider(
+            self.cloudmusic_watcher.current_position
+        )
+
+        self.cloudmusic_watcher.track_changed.connect(
+            self.netease_source.handle_track_change
+        )
+
+        self.cloudmusic_watcher.is_playing_changed.connect(
             self.apply_playback_status
         )
 
-        # 初始状态默认视为播放，实际状态由 SMTC 回调更新。
+        self.cloudmusic_watcher.position_changed.connect(
+            self.apply_playback_position
+        )
+
+        # 初始状态默认视为播放，实际状态由本地监听回调更新。
         self.is_paused = False
+
+        # 是否已用外部真实进度接管时间轴。
+        # 在收到第一次有效进度前，仍可用内部计时作为兜底。
+        self._has_external_position = False
 
         screen = (
             QApplication
@@ -127,7 +143,6 @@ class LyricsOverlay(QWidget):
 
         self.frame_timer.start(FRAME_INTERVAL)
 
-
     def apply_lyrics(self, lyrics, start_offset, song, artist):
         """
         应用新歌曲的歌词数据并重置歌词时间轴。
@@ -146,6 +161,7 @@ class LyricsOverlay(QWidget):
         # 设置到当前播放时间，update_lyrics() 会一次创建
         # 该时间点之前应该已经出现的歌词。
         self.current_time = start_offset
+        self._has_external_position = True
 
 
     def clear_lyrics(self):
@@ -163,7 +179,6 @@ class LyricsOverlay(QWidget):
 
         self.update()
 
-
     def apply_playback_status(self, is_playing):
         """
         更新当前歌词动画的播放状态。
@@ -175,8 +190,54 @@ class LyricsOverlay(QWidget):
         self.is_paused = not is_playing
 
         print(
-            f"[SMTC] {'播放' if is_playing else '暂停'}"
+            f"[网易云] {'播放' if is_playing else '暂停'}"
         )
+
+    def apply_playback_position(self, position):
+        """
+        用网易云真实播放进度校正歌词时间轴。
+
+        平时仍由 update_frame 按帧平滑推进，保证逐字出现；
+        仅在首次对齐或进度明显跳变（拖动进度条）时强制同步。
+
+        Args:
+            position: 当前歌曲播放进度（秒）。
+        """
+
+        from config import LYRIC_MANUAL_OFFSET
+
+        target = max(
+            0.0,
+            float(position) + LYRIC_MANUAL_OFFSET
+        )
+
+        # 尚未对齐过外部进度：做一次初始同步。
+        if not self._has_external_position:
+            self.current_time = target
+            self._has_external_position = True
+            self._resync_lyrics_to_time()
+            return
+
+        delta = target - self.current_time
+
+        # 进度明显跳变时视为拖动进度条或大幅校正，
+        # 此时重建歌词；小幅差异交给本地平滑计时消化。
+        if abs(delta) >= 0.5:
+            self.current_time = target
+            self._resync_lyrics_to_time()
+
+    def _resync_lyrics_to_time(self):
+        """
+        按当前时间轴重建已显示歌词。
+        """
+
+        self.active_lyrics.clear()
+        self.next_index = 0
+
+        # update_lyrics() 会根据 current_time
+        # 一次性补齐该时间点前应出现的歌词。
+        self.update_lyrics()
+        self.update()
 
 
     def setup_window(self):
@@ -229,7 +290,9 @@ class LyricsOverlay(QWidget):
             0.1
         )
 
-        # 暂停时冻结歌词时间轴，使字幕与播放状态同步。
+        # 暂停时冻结歌词时间轴。
+        # 平时由本地按帧平滑推进，保证逐字动画；
+        # 外部真实进度只在切歌/拖动时通过 apply_playback_position 校正。
         if not self.is_paused:
             self.current_time += elapsed
 

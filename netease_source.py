@@ -1,22 +1,22 @@
 """
 网易云音乐歌词来源模块。
 
-负责检测当前播放歌曲、获取歌词数据，
+负责根据当前歌曲获取歌词数据，
 并通过信号向其他模块提供歌词更新事件。
+
+当前歌曲信息由 CloudMusicWatcher 提供，
+本模块不再通过窗口标题识别歌曲。
 """
 
-import re
-import time
 import threading
+import time
 
 import requests
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, Signal
 
 from config import (
-    MAX_DELAY_COMPENSATION,
     LYRIC_MANUAL_OFFSET,
-    NETEASE_POLL_INTERVAL
 )
 
 from lrc_parser import parse_lrc_text
@@ -36,10 +36,8 @@ class NetEaseMusic:
     """
     网易云音乐数据接口。
 
-    负责歌词搜索以及歌词获取。
+    负责根据歌曲名与歌手搜索并获取 LRC 歌词。
     """
-
-    PROCESS_NAME = "cloudmusic.exe"
 
     HEADERS = {
         "User-Agent": (
@@ -50,133 +48,6 @@ class NetEaseMusic:
         ),
         "Referer": "https://music.163.com/",
     }
-
-    @staticmethod
-    def get_all_player_pids():
-        """
-        获取当前运行中的网易云音乐进程 PID。
-
-        Returns:
-            网易云音乐进程 PID 列表。
-            未找到进程时返回空列表。
-        """
-
-        try:
-            import psutil
-        except ImportError:
-            print("[网易云] 缺少 psutil，请执行：pip install psutil")
-            return []
-
-        result = []
-
-        for proc in psutil.process_iter(["pid", "name"]):
-            try:
-                name = proc.info["name"]
-
-                if (
-                    name
-                    and
-                    name.lower() == NetEaseMusic.PROCESS_NAME.lower()
-                ):
-                    result.append(proc.info["pid"])
-
-            except (
-                psutil.NoSuchProcess,
-                psutil.AccessDenied,
-                psutil.ZombieProcess
-            ):
-                continue
-
-        print(f"[网易云] 检测到进程 PID: {result}")
-        return result
-
-    @staticmethod
-    def get_song_from_all_windows():
-        """
-        从网易云窗口标题中解析当前歌曲信息。
-
-        扫描所有网易云窗口，并解析
-        “歌曲名 - 歌手”的标题格式。
-        """
-
-        try:
-            import win32gui
-            import win32process
-
-        except ImportError:
-            print("[网易云] 缺少 pywin32，请执行：pip install pywin32")
-            return None, None
-
-        # 匹配窗口标题格式：歌曲名 - 歌手
-        pattern = re.compile(
-            r"^(.+?)\s*-\s*(.+?)$"
-        )
-
-        pids = set(
-            NetEaseMusic.get_all_player_pids()
-        )
-
-        candidates = []
-
-        # 遍历所有窗口，查找网易云音乐窗口标题
-        def callback(hwnd, _):
-
-            try:
-                if not win32gui.IsWindowVisible(hwnd):
-                    return
-
-                _, pid = win32process.GetWindowThreadProcessId(hwnd)
-
-                if pid not in pids:
-                    return
-
-                title = win32gui.GetWindowText(hwnd).strip()
-
-                if title:
-                    print(
-                        f"[网易云] PID={pid} 窗口标题: {title}"
-                    )
-                    candidates.append(title)
-
-            except Exception:
-                pass
-
-        try:
-            win32gui.EnumWindows(callback, None)
-
-        except Exception as exc:
-            print(f"[网易云] 枚举窗口失败: {exc}")
-            return None, None
-
-        for title in candidates:
-
-            match = pattern.match(title)
-
-            if not match:
-                continue
-
-            song = match.group(1).strip()
-            artist = match.group(2).strip()
-
-            if song.lower() in (
-                "netease cloud music",
-                "网易云音乐"
-            ):
-                continue
-
-            print(
-                f"[网易云] 识别成功: {song} - {artist}"
-            )
-
-            return song, artist
-
-        print("[网易云] 未找到歌曲标题窗口")
-        return None, None
-
-    @staticmethod
-    def get_current_song():
-
-        return NetEaseMusic.get_song_from_all_windows()
 
     @staticmethod
     def fetch_lyrics(song, artist=""):
@@ -289,7 +160,7 @@ class NeteaseSource(QObject):
     """
     网易云歌词来源管理器。
 
-    负责轮询歌曲状态、获取歌词以及发送歌词事件。
+    接收外部提供的当前歌曲信息，获取歌词并发送歌词事件。
     """
 
     # 参数：
@@ -301,11 +172,9 @@ class NeteaseSource(QObject):
     # 当前歌曲发生变化时，立即通知界面清除上一首歌词
     lyrics_cleared = Signal()
 
-    def __init__(self, poll_interval=NETEASE_POLL_INTERVAL, parent=None):
+    def __init__(self, parent=None):
         """
         初始化歌词来源服务。
-
-        创建轮询定时器，并准备歌词请求状态。
         """
 
         super().__init__(parent)
@@ -316,62 +185,87 @@ class NeteaseSource(QObject):
             self._on_fetch_done
         )
 
-        self.poll_timer = QTimer(self)
-
-        self.poll_timer.timeout.connect(
-            self.poll
-        )
-
-        self.poll_timer.start(poll_interval)
-
         self.fetching = False
         self.current_song_key = None
 
-        # 「识别到新歌曲开始播放」那一刻的墙钟时间，
-        # 用来在歌词准备好后计算需要补偿多少延迟。
-        self.song_detect_time = None
+        # 发起歌词请求时的歌曲进度（秒）。
+        # 请求完成后作为歌词时间轴起点，
+        # 使中途打开程序或拖动进度条后仍能对齐。
+        self.song_position_at_detect = 0.0
 
-    def poll(self):
+        # 当前歌曲名与歌手，用于校验异步请求返回时是否已经切歌。
+        self._pending_song = None
+        self._pending_artist = None
+
+        # 由外部注入的进度读取函数：() -> float
+        self._position_provider = None
+
+    def set_position_provider(self, provider):
         """
-        检查当前播放歌曲是否发生变化。
+        设置当前播放进度的读取函数。
 
-        检测到新歌曲后异步获取歌词。
+        Args:
+            provider: 无参数可调用对象，返回当前进度秒数。
         """
 
-        if self.fetching:
-            return
+        self._position_provider = provider
 
-        song, artist = NetEaseMusic.get_current_song()
+    def handle_track_change(self, song, artist):
+        """
+        处理当前歌曲变化。
+
+        由 CloudMusicWatcher.track_changed 信号触发。
+
+        Args:
+            song: 歌曲名称。
+            artist: 歌手名称。
+        """
 
         if not song:
             return
 
         song_key = (
             song.strip().lower(),
-            artist.strip().lower()
+            (artist or "").strip().lower()
         )
 
         if song_key == self.current_song_key:
             return
 
+        if self.fetching:
+            # 允许新的切歌打断旧请求的结果展示，
+            # 旧请求返回时会通过 song_key 校验丢弃。
+            pass
+
         self.current_song_key = song_key
+        self._pending_song = song
+        self._pending_artist = artist or ""
 
-        # 歌曲发生变化
-        #
-        # 立即清除上一首歌词，避免新歌词获取期间
-        # 屏幕继续显示上一首歌曲的字幕。
-
+        # 歌曲发生变化时立即清除上一首歌词，
+        # 避免新歌词获取期间屏幕继续显示上一首字幕。
         self.lyrics_cleared.emit()
 
         print(
             f"[网易云] 检测到新歌曲：{song} - {artist}"
         )
 
-        self.song_detect_time = time.monotonic()
+        # 记录识别到新歌时的真实播放进度。
+        if self._position_provider is not None:
+
+            try:
+                self.song_position_at_detect = float(
+                    self._position_provider()
+                )
+
+            except Exception:
+                self.song_position_at_detect = 0.0
+
+        else:
+            self.song_position_at_detect = 0.0
 
         self.fetching = True
 
-        # 在线程中执行歌词请求，避免阻塞 Qt 主线程
+        # 在线程中执行歌词请求，避免阻塞 Qt 主线程。
         def worker():
 
             lrc = NetEaseMusic.fetch_lyrics(
@@ -381,7 +275,7 @@ class NeteaseSource(QObject):
 
             self.bridge.result.emit(
                 song,
-                artist,
+                artist or "",
                 lrc or "",
                 "ok" if lrc else "error"
             )
@@ -413,37 +307,23 @@ class NeteaseSource(QObject):
 
         self.fetching = False
 
-        # 防止歌词请求期间发生切歌
+        # 防止歌词请求期间发生切歌。
         #
         # 歌词请求是在后台线程中进行的。
         # 如果请求期间已经切换歌曲，
         # 当前请求返回的歌词就不再属于正在播放的歌曲。
 
-        current_song, current_artist = (
-            NetEaseMusic.get_current_song()
-        )
-
-        current_song_key = (
-            current_song.strip().lower(),
-            current_artist.strip().lower()
-        ) if current_song else None
-
         result_song_key = (
             song.strip().lower(),
-            artist.strip().lower()
+            (artist or "").strip().lower()
         )
 
-        if current_song_key != result_song_key:
-            print(
-                f"[网易云] 歌词返回时歌曲已变化："
-                f"{song} - {artist}"
-                f" → "
-                f"{current_song} - {current_artist}"
-            )
+        if result_song_key != self.current_song_key:
 
-            # 当前歌曲已经变化。
-            # 不显示旧歌曲歌词，下一轮 poll 会重新获取新歌歌词。
-            self.current_song_key = None
+            print(
+                f"[网易云] 歌词返回时歌曲已变化，丢弃："
+                f"{song} - {artist}"
+            )
 
             return
 
@@ -465,38 +345,26 @@ class NeteaseSource(QObject):
 
             return
 
-        # 延迟补偿：
-        # 计算歌词加载期间歌曲已经播放的时间，
-        # 作为歌词时间轴起始偏移。
+        # 使用请求发起时记录的播放进度作为起点。
+        # 若请求期间进度已继续前进，再读取一次最新进度，
+        # 使歌词尽量贴近当前真实播放位置。
+        position = self.song_position_at_detect
 
-        if self.song_detect_time is not None:
+        if self._position_provider is not None:
 
-            delay = (
-                time.monotonic()
-                - self.song_detect_time
-            )
+            try:
+                position = float(
+                    self._position_provider()
+                )
 
-        else:
+            except Exception:
+                pass
 
-            delay = 0.0
-
-        delay = max(
-            0.0,
-            min(
-                delay,
-                MAX_DELAY_COMPENSATION
-            )
-        )
-
-        # 手动延迟补偿
-        # 自动补偿负责弥补歌词读取过程产生的延迟，
-        # 手动补偿则用于用户根据实际听感进行微调。
-        #
+        # 手动延迟补偿：
         # 正数：歌词提前
         # 负数：歌词延后
-
         start_offset = (
-                delay
+                max(0.0, position)
                 + LYRIC_MANUAL_OFFSET
         )
 
@@ -506,7 +374,7 @@ class NeteaseSource(QObject):
 
         print(
             f"[网易云] 共 {len(lyrics)} 句"
-            f" | 补偿延迟 {start_offset:.2f}s"
+            f" | 起始进度 {start_offset:.2f}s"
         )
 
         self.lyrics_ready.emit(

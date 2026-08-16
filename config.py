@@ -44,20 +44,10 @@ MIN_LYRIC_LIFETIME = 8.0
 # 下一句出现后，上一句至少继续保留多久（秒）
 OVERLAP_DURATION = 1.20
 
-## 延迟补偿配置
-# 根据歌曲识别和歌词加载耗时计算补偿时间
-# 避免歌词始终从 0 秒开始播放
-# 极端情况下（比如网络长时间无响应）延迟补偿的上限（秒）
-MAX_DELAY_COMPENSATION = 15.0
-
 # 手动延迟补偿（秒）
 # 正数：歌词提前
 # 负数：歌词延后
 LYRIC_MANUAL_OFFSET = 0.5
-
-## 轮询 / 刷新节奏
-# 窗口标题轮询间隔（毫秒）
-NETEASE_POLL_INTERVAL = 2000
 
 # 主渲染循环刷新间隔（毫秒）
 FRAME_INTERVAL = 16

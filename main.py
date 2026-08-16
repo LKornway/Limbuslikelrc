@@ -6,7 +6,6 @@
 
 import sys
 
-from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from overlay import LyricsOverlay
@@ -24,12 +23,6 @@ def main():
     )
 
     window = LyricsOverlay([])
-
-    # 程序启动后立即检测当前播放歌曲
-    QTimer.singleShot(
-        0,
-        window.netease_source.poll
-    )
 
     print("按ESC退出")
     window.show()
