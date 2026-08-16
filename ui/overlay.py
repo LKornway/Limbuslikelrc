@@ -41,9 +41,9 @@ from config import (
     MIN_LYRIC_LIFETIME,
     FRAME_INTERVAL,
 )
-from models import CharacterState, LyricObject
-from netease_source import NeteaseSource
-from cloudmusic_watcher import CloudMusicWatcher
+from lyric_app.core.models import CharacterState, LyricObject
+from lyric_app.core.netease_source import NeteaseSource
+from lyric_app.core.cloudmusic_watcher import CloudMusicWatcher
 
 
 class LyricsOverlay(QWidget):

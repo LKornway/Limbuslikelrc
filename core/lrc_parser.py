@@ -7,7 +7,7 @@ LRC歌词解析模块。
 
 import re
 
-from models import LRCLine
+from lyric_app.core.models import LRCLine
 
 # 常见非歌词元信息行：作词/作曲/编曲等
 _META_LINE_RE = re.compile(
