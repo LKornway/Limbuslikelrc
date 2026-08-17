@@ -14,10 +14,8 @@ import requests
 
 from PySide6.QtCore import QObject, Signal
 
-from config import (
-    LYRIC_MANUAL_OFFSET,
-)
 
+import config
 from core.lrc_parser import parse_lrc_text
 
 
@@ -393,7 +391,7 @@ class NeteaseSource(QObject):
         # 负数：歌词延后
         start_offset = (
                 max(0.0, position)
-                + LYRIC_MANUAL_OFFSET
+                + config.LYRIC_MANUAL_OFFSET
         )
 
         print(

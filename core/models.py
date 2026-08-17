@@ -6,8 +6,6 @@
 
 from dataclasses import dataclass, field
 
-from config import FADE_DURATION
-
 import config
 
 
