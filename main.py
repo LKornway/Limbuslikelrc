@@ -29,8 +29,8 @@ def main():
     # 创建唯一的 CloudMusicWatcher 实例
     watcher = CloudMusicWatcher()
 
-    main_window = MainWindow(watcher)      # 传入 watcher
-    overlay = LyricsOverlay([], watcher)   # 传入 watcher
+    main_window = MainWindow(watcher)
+    overlay = LyricsOverlay([], watcher)
 
     main_window.overlay = overlay
 

@@ -269,12 +269,12 @@ class LyricsOverlay(QWidget):
 
         self.update()
 
-
     def setup_window(self):
         """
         配置歌词悬浮窗的窗口属性。
         """
 
+        # 保持原有窗口标志（无边框、置顶、Tool 窗口）
         self.setWindowFlags(
             Qt.FramelessWindowHint
             | Qt.WindowStaysOnTopHint
@@ -290,6 +290,29 @@ class LyricsOverlay(QWidget):
             Qt.WA_TransparentForMouseEvents,
             True
         )
+
+        import sys
+        if sys.platform == 'win32':
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                hwnd = int(self.winId())
+                GWL_EXSTYLE = -20
+                WS_EX_TRANSPARENT = 0x00000020
+
+                ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                ex_style |= WS_EX_TRANSPARENT
+                ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
+
+                SWP_NOMOVE = 0x0002
+                SWP_NOSIZE = 0x0001
+                ctypes.windll.user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE)
+            except Exception:
+                pass
+
+        self.showFullScreen()
+
 
         self.showFullScreen()
 
