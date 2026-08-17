@@ -1,0 +1,250 @@
+"""
+设置对话框。
+
+提供 config 参数调节、关闭行为选项以及项目 GitHub 链接。
+"""
+
+from __future__ import annotations
+
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QIcon
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QColorDialog,
+    QComboBox,
+    QDialog,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+    QStyle,
+)
+
+from core.settings_store import (
+    APP_DEFAULTS,
+    CONFIG_KEYS,
+    GITHUB_URL,
+    apply_config_snapshot,
+    export_config_snapshot,
+    save_settings,
+)
+
+
+CONFIG_LABELS = {
+    "MAX_ACTIVE_LINES": "同时显示歌词行数上限",
+    "SCREEN_MARGIN": "屏幕边距（像素）",
+    "MAX_WIDTH_RATIO": "单行最大宽度比例",
+    "POSITION_PADDING": "位置随机边距（像素）",
+    "MAX_TEXT_LINES": "单句最大换行数",
+    "FONT_FAMILY": "字体名称",
+    "FONT_SIZE": "字号",
+    "FONT_BOLD": "粗体",
+    "CHAR_SPACING": "字间距（像素）",
+    "TEXT_COLOR": "文字颜色",
+    "STROKE_COLOR": "描边颜色",
+    "SHAKE_INTENSITY": "抖动强度",
+    "SHAKE_INTERVAL": "抖动间隔（毫秒）",
+    "SHAKE_FOLLOW": "抖动跟随系数",
+    "MIN_ANGLE": "最小倾斜角（度）",
+    "MAX_ANGLE": "最大倾斜角（度）",
+    "CHAR_INTERVAL": "逐字出现间隔（秒）",
+    "FADE_DURATION": "淡出时长（秒）",
+    "MAX_LYRIC_LIFETIME": "歌词最长存活（秒）",
+    "MIN_LYRIC_LIFETIME": "歌词最短存活（秒）",
+    "OVERLAP_DURATION": "与下一句重叠时间（秒）",
+    "LYRIC_MANUAL_OFFSET": "手动时间偏移（秒）",
+    "FRAME_INTERVAL": "刷新间隔（毫秒）",
+}
+
+
+class SettingsDialog(QDialog):
+    """
+    应用设置窗口。
+    """
+
+    def __init__(self, app_settings: dict, parent=None):
+        super().__init__(parent)
+
+        self.setWindowTitle("设置")
+        self.resize(460, 560)
+        self._app_settings = dict(app_settings)
+        self._editors = {}
+
+        root = QVBoxLayout(self)
+
+        # 窗口图标 + 内容区左上角标题行
+        icon = self.style().standardIcon(
+            QStyle.StandardPixmap.SP_FileDialogDetailedView
+        )
+        self.setWindowIcon(icon)
+
+        header = QHBoxLayout()
+        icon_label = QLabel()
+        icon_label.setPixmap(icon.pixmap(20, 20))
+        header.addWidget(icon_label)
+        header.addWidget(QLabel("设置"))
+        header.addStretch(1)
+        root.addLayout(header)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        body = QWidget()
+        form_host = QVBoxLayout(body)
+
+        # 应用行为
+        app_box = QGroupBox("应用")
+        app_form = QFormLayout(app_box)
+
+        self.tray_combo = QComboBox()
+        self.tray_combo.addItem("每次询问", None)
+        self.tray_combo.addItem("关闭时最小化到托盘", True)
+        self.tray_combo.addItem("关闭时直接退出", False)
+
+        current = self._app_settings.get("minimize_to_tray_on_close")
+        index = self.tray_combo.findData(current)
+        if index < 0:
+            index = 0
+        self.tray_combo.setCurrentIndex(index)
+        app_form.addRow("关闭主窗口", self.tray_combo)
+
+        github_row = QHBoxLayout()
+        github_btn = QPushButton("打开 GitHub 仓库")
+        github_btn.clicked.connect(self._open_github)
+        github_row.addWidget(github_btn)
+        github_row.addStretch(1)
+        app_form.addRow("项目地址", github_row)
+        form_host.addWidget(app_box)
+
+        # 主界面外观
+        theme_box = QGroupBox("主界面外观")
+        theme_form = QFormLayout(theme_box)
+
+        self._theme_editors = {}
+        theme_fields = [
+            ("ui_bg", "背景色"),
+            ("ui_border", "边框色"),
+            ("ui_accent", "强调色（进度条）"),
+            ("ui_text", "文字色"),
+        ]
+        for key, label in theme_fields:
+            value = self._app_settings.get(key, APP_DEFAULTS.get(key, "#ffffff"))
+            editor = self._make_editor(key, "color", value)
+            self._theme_editors[key] = editor
+            theme_form.addRow(label, editor)
+
+        form_host.addWidget(theme_box)
+
+        # 视觉 / 动画参数
+        visual_box = QGroupBox("歌词显示")
+        visual_form = QFormLayout(visual_box)
+
+        snapshot = export_config_snapshot()
+        for key, kind in CONFIG_KEYS.items():
+            value = snapshot.get(key)
+            editor = self._make_editor(key, kind, value)
+            self._editors[key] = editor
+            visual_form.addRow(
+                CONFIG_LABELS.get(key, key),
+                editor,
+            )
+
+        form_host.addWidget(visual_box)
+        form_host.addStretch(1)
+        scroll.setWidget(body)
+        root.addWidget(scroll)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        save_btn = QPushButton("保存")
+        cancel_btn = QPushButton("取消")
+        save_btn.clicked.connect(self._on_save)
+        cancel_btn.clicked.connect(self.reject)
+        buttons.addWidget(save_btn)
+        buttons.addWidget(cancel_btn)
+        root.addLayout(buttons)
+
+    def _make_editor(self, key, kind, value):
+        if kind == "color":
+            if isinstance(value, QColor):
+                value_str = value.name(QColor.HexRgb)
+            else:
+                value_str = str(value)
+            row = QWidget()
+            layout = QHBoxLayout(row)
+            layout.setContentsMargins(0, 0, 0, 0)
+            line = QLineEdit(str(value))
+            btn = QPushButton("选择")
+            btn.clicked.connect(lambda: self._pick_color(line))
+            layout.addWidget(line)
+            layout.addWidget(btn)
+            row._value_widget = line
+            return row
+
+        if kind is bool:
+            box = QCheckBox()
+            box.setChecked(bool(value))
+            return box
+
+        if kind is int:
+            box = QSpinBox()
+            box.setRange(-99999, 99999)
+            box.setValue(int(value))
+            return box
+
+        if kind is float:
+            box = QDoubleSpinBox()
+            box.setDecimals(3)
+            box.setRange(-99999.0, 99999.0)
+            box.setSingleStep(0.1)
+            box.setValue(float(value))
+            return box
+
+        line = QLineEdit(str(value))
+        return line
+
+    def _pick_color(self, line: QLineEdit):
+        color = QColorDialog.getColor(QColor(line.text()), self)
+        if color.isValid():
+            line.setText(color.name())
+
+    def _read_editor(self, key, kind, editor):
+        if kind == "color":
+            return editor._value_widget.text().strip()
+        if kind is bool:
+            return editor.isChecked()
+        if kind is int:
+            return editor.value()
+        if kind is float:
+            return editor.value()
+        return editor.text().strip()
+
+    def _on_save(self):
+        config_data = {}
+        for key, kind in CONFIG_KEYS.items():
+            config_data[key] = self._read_editor(
+                key, kind, self._editors[key]
+            )
+
+        self._app_settings["minimize_to_tray_on_close"] = (
+            self.tray_combo.currentData()
+        )
+
+        for key, editor in self._theme_editors.items():
+            self._app_settings[key] = self._read_editor(key, "color", editor)
+
+        apply_config_snapshot(config_data)
+        save_settings(self._app_settings, config_data)
+        self.accept()
+
+    def app_settings(self) -> dict:
+        return dict(self._app_settings)
+
+    def _open_github(self):
+        QDesktopServices.openUrl(QUrl(GITHUB_URL))

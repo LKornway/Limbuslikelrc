@@ -19,6 +19,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QApplication, QWidget
 
+import config
 from config import (
     MAX_ACTIVE_LINES,
     SCREEN_MARGIN,
@@ -28,8 +29,6 @@ from config import (
     FONT_SIZE,
     FONT_BOLD,
     CHAR_SPACING,
-    TEXT_COLOR,
-    STROKE_COLOR,
     SHAKE_INTENSITY,
     SHAKE_INTERVAL,
     SHAKE_FOLLOW,
@@ -180,6 +179,60 @@ class LyricsOverlay(QWidget):
 
         self.update()
 
+    def reload_config(self):
+        """
+        设置保存后调用：刷新运行时配置。
+        """
+
+        import config
+
+        global FONT_FAMILY
+        global FONT_SIZE
+        global FONT_BOLD
+        global CHAR_SPACING
+        global TEXT_COLOR
+        global STROKE_COLOR
+        global SHAKE_INTENSITY
+        global SHAKE_INTERVAL
+        global SHAKE_FOLLOW
+        global MIN_ANGLE
+        global MAX_ANGLE
+        global CHAR_INTERVAL
+        global OVERLAP_DURATION
+        global MAX_LYRIC_LIFETIME
+        global MIN_LYRIC_LIFETIME
+        global FRAME_INTERVAL
+
+        FONT_FAMILY = config.FONT_FAMILY
+        FONT_SIZE = config.FONT_SIZE
+        FONT_BOLD = config.FONT_BOLD
+        CHAR_SPACING = config.CHAR_SPACING
+        TEXT_COLOR = config.TEXT_COLOR
+        STROKE_COLOR = config.STROKE_COLOR
+        SHAKE_INTENSITY = config.SHAKE_INTENSITY
+        SHAKE_INTERVAL = config.SHAKE_INTERVAL
+        SHAKE_FOLLOW = config.SHAKE_FOLLOW
+        MIN_ANGLE = config.MIN_ANGLE
+        MAX_ANGLE = config.MAX_ANGLE
+        CHAR_INTERVAL = config.CHAR_INTERVAL
+        OVERLAP_DURATION = config.OVERLAP_DURATION
+        MAX_LYRIC_LIFETIME = config.MAX_LYRIC_LIFETIME
+        MIN_LYRIC_LIFETIME = config.MIN_LYRIC_LIFETIME
+        FRAME_INTERVAL = config.FRAME_INTERVAL
+
+        self.font = QFont(
+            FONT_FAMILY,
+            FONT_SIZE,
+        )
+        self.font.setBold(FONT_BOLD)
+
+        self.fm = QFontMetrics(self.font)
+        self.line_height = self.fm.height()
+
+        self.frame_timer.setInterval(FRAME_INTERVAL)
+
+        self.update()
+
     def apply_playback_status(self, is_playing):
         """
         更新当前歌词动画的播放状态。
@@ -275,7 +328,7 @@ class LyricsOverlay(QWidget):
         for index in visible_indices:
             self.create_lyric(index)
 
-        # 下一次正常推进从“当前时间之后的第一句”开始
+        # 下一次正常推进从"当前时间之后的第一句"开始
         self.next_index = 0
         while (
                 self.next_index < len(self.lyrics)
@@ -1220,7 +1273,7 @@ class LyricsOverlay(QWidget):
 
             # 绘制偏移后的阴影，增加文字的立体感。
             shadow_color = QColor(
-                STROKE_COLOR
+                config.STROKE_COLOR
             )
 
             shadow_color.setAlpha(
@@ -1251,7 +1304,7 @@ class LyricsOverlay(QWidget):
             )
 
             text_color = QColor(
-                TEXT_COLOR
+                config.TEXT_COLOR
             )
 
             text_color.setAlpha(

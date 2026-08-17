@@ -28,7 +28,7 @@ class CloudMusicWatcher(QObject):
     position_changed = Signal(float)
 
     # 当前歌曲名、歌手名。
-    track_changed = Signal(str, str)
+    track_changed = Signal(str, str, str)
 
     def __init__(self, parent=None, poll_interval_ms=200):
         """
@@ -167,6 +167,9 @@ class CloudMusicWatcher(QObject):
             artist.lower()
         )
 
+        track_id = getattr(track, "id", 0)
+        track_id_str = str(track_id) if track_id else ""
+
         # 切歌：歌曲名或歌手发生变化。
         if (
                 song
@@ -181,7 +184,8 @@ class CloudMusicWatcher(QObject):
 
             self.track_changed.emit(
                 song,
-                artist
+                artist,
+                track_id_str
             )
 
         is_playing = bool(state.is_playing)

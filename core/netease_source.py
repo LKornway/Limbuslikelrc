@@ -171,6 +171,9 @@ class NeteaseSource(QObject):
     # 当前歌曲发生变化时，立即通知界面清除上一首歌词
     lyrics_cleared = Signal()
 
+    #歌词获取失败返回失败通知
+    lyrics_failed = Signal(str, str)
+
     def __init__(self, parent=None):
         """
         初始化歌词来源服务。
@@ -209,7 +212,7 @@ class NeteaseSource(QObject):
 
         self._position_provider = provider
 
-    def handle_track_change(self, song, artist):
+    def handle_track_change(self, song, artist, track_id_str):
         """
         处理当前歌曲变化。
 
@@ -336,12 +339,16 @@ class NeteaseSource(QObject):
 
         lyrics = parse_lrc_text(lrc_text)
 
+        if status != "ok":
+            print(f"[网易云] 获取歌词失败：{song} - {artist}")
+            self.lyrics_failed.emit(song, artist or "")
+            return
+
+        lyrics = parse_lrc_text(lrc_text)
+
         if not lyrics:
-
-            print(
-                f"[网易云] LRC 解析失败：{song} - {artist}"
-            )
-
+            print(f"[网易云] LRC 解析失败：{song} - {artist}")
+            self.lyrics_failed.emit(song, artist or "")
             return
 
         # 使用请求发起时记录的播放进度作为起点。
