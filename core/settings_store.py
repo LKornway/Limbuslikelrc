@@ -17,7 +17,7 @@ import config
 APP_DEFAULTS = {
     "minimize_to_tray_on_close": None,
     "window_width": 400,
-    "window_height": 250,
+    "window_height": 270,
     "ui_bg": "#1a1a1f",
     "ui_border": "#3a3a45",
     "ui_accent": "#d8a523",

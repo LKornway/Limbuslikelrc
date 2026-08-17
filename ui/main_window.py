@@ -17,6 +17,7 @@ from PySide6.QtCore import (
     QRect,
     QSize,
     Signal,
+    QTimer,
     QObject,
 )
 from PySide6.QtGui import (
@@ -25,6 +26,7 @@ from PySide6.QtGui import (
     QFont,
     QIcon,
     QImage,
+    QFontMetrics,
     QPainter,
     QPainterPath,
     QPixmap,
@@ -42,11 +44,82 @@ from PySide6.QtWidgets import (
     QMenu,
     QVBoxLayout,
     QWidget,
+    QSizeGrip
 )
 
 from core.cloudmusic_watcher import CloudMusicWatcher
 from core.settings_store import load_settings, save_settings
 from ui.settings_dialog import SettingsDialog
+
+
+class MarqueeLabel(QLabel):
+    """单行循环滚动显示长文本的标签。"""
+
+    def __init__(self, text="", parent=None):
+        super().__init__(text, parent)
+        self.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._full_text = text
+        self._offset = 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(45)
+        self._timer.timeout.connect(self._advance)
+
+    def setText(self, text):
+        self._full_text = text or ""
+        self._offset = 0
+        self._update_animation()
+        self.update()
+
+    def _text_width(self):
+        return QFontMetrics(self.font()).horizontalAdvance(self._full_text)
+
+    def _update_animation(self):
+        if self._text_width() > self.contentsRect().width():
+            if not self._timer.isActive():
+                self._timer.start()
+        else:
+            self._timer.stop()
+            self._offset = 0
+
+    def _advance(self):
+        width = self._text_width()
+        available = self.contentsRect().width()
+        if width <= available:
+            self._timer.stop()
+            self._offset = 0
+        else:
+            self._offset += 1
+            if self._offset > width + 30:
+                self._offset = 0
+        self.update()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_animation()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        rect = self.contentsRect()
+        text_width = self._text_width()
+
+        if text_width <= rect.width():
+            painter.drawText(rect, Qt.AlignVCenter | Qt.AlignLeft, self._full_text)
+            return
+
+        gap = 30
+        x = rect.left() - self._offset
+        y = rect.top()
+        painter.drawText(x, y, text_width, rect.height(), Qt.AlignVCenter, self._full_text)
+        painter.drawText(
+            x + text_width + gap,
+            y,
+            text_width,
+            rect.height(),
+            Qt.AlignVCenter,
+            self._full_text,
+        )
 
 
 class CoverBridge(QObject):
@@ -63,7 +136,11 @@ class MainWindow(QMainWindow):
     """
 
     # 边缘缩放感应宽度
-    EDGE = 6
+    EDGE = 10
+    BASE_WIDTH = 400
+    BASE_HEIGHT = 200
+    MIN_WIDTH = 240
+    MIN_HEIGHT = 120
 
     def __init__(self, watcher: CloudMusicWatcher = None):
         """
@@ -89,9 +166,9 @@ class MainWindow(QMainWindow):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.resize(
             int(app_cfg.get("window_width", 400)),
-            int(app_cfg.get("window_height", 250)),
+            int(app_cfg.get("window_height", 270)),
         )
-        self.setMinimumSize(0, 0)
+        self.setMinimumSize(self.MIN_WIDTH, self.MIN_HEIGHT)
 
         self._drag_pos = None
         self._resize_edge = None
@@ -124,80 +201,89 @@ class MainWindow(QMainWindow):
         self.chrome.setObjectName("chrome")
 
         outer = QVBoxLayout(self.chrome)
-        outer.setContentsMargins(12, 10, 12, 12)
+        outer.setContentsMargins(12, 6, 6, 6)
         outer.setSpacing(10)
 
-        # 标题栏：左标题，右最小化 / 最大化 / 关闭（等大）
+        # 标题栏
         title = QHBoxLayout()
         title.setSpacing(4)
         title.setContentsMargins(0, 0, 0, 0)
 
         title_label = QLabel("Limbuslikelrc")
-        title_label.setStyleSheet("font-size: 12px;")
+        title_label.setObjectName("windowTitle")
         title.addWidget(title_label)
-
-        title.addStretch(1)  # 只加这一次，把按钮顶到右边
-
-        btn_size = QSize(32, 28)
+        title.addStretch(1)
 
         self.btn_min = QPushButton("—")
-        self.btn_min.setObjectName("titleBtn")
-        self.btn_min.setFixedSize(btn_size)
-        self.btn_min.clicked.connect(self.showMinimized)
-
         self.btn_max = QPushButton("□")
-        self.btn_max.setObjectName("titleBtn")
-        self.btn_max.setFixedSize(btn_size)
-        self.btn_max.clicked.connect(self._toggle_max)
-
         self.btn_close = QPushButton("×")
-        self.btn_close.setObjectName("closeBtn")  # 不要再设成 titleBtn
-        self.btn_close.setFixedSize(btn_size)
+        for button in (self.btn_min, self.btn_max, self.btn_close):
+            button.setObjectName("titleBtn")
+            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        self.btn_close.setObjectName("closeBtn")
+        self.btn_min.clicked.connect(self.showMinimized)
+        self.btn_max.clicked.connect(self._toggle_max)
         self.btn_close.clicked.connect(self.close)
 
         title.addWidget(self.btn_min)
         title.addWidget(self.btn_max)
         title.addWidget(self.btn_close)
-
         outer.addLayout(title)
 
         # 主体：封面 + 信息
         body = QHBoxLayout()
         body.setSpacing(14)
 
-        self.cover_label = QLabel()
-        self.cover_label.setFixedSize(120, 120)
+        self.cover_label = QLabel("封面")
         self.cover_label.setAlignment(Qt.AlignCenter)
-        self.cover_label.setStyleSheet(
-            "background: #2a2a32; border-radius: 10px; color: #777;"
-        )
-        self.cover_label.setText("封面")
+        self.cover_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         body.addWidget(self.cover_label)
 
         info = QVBoxLayout()
         info.setSpacing(6)
 
-        self.song_label = QLabel("未在播放")
+        self.song_label = MarqueeLabel("未在播放")
+        self.song_label.setObjectName("songLabel")
         self.song_label.setFont(QFont("Microsoft YaHei", 14, QFont.Bold))
-        self.song_label.setWordWrap(True)
+        info.addWidget(self.song_label)
 
         self.artist_label = QLabel("—")
+        self.artist_label.setObjectName("artistLabel")
+        info.addWidget(self.artist_label)
 
         self.status_label = QLabel("")
-        self.status_label.setStyleSheet("font-size: 12px;")
+        self.status_label.setObjectName("statusLabel")
+        info.addWidget(self.status_label)
+
+        controls_layout = QHBoxLayout()
+        controls_layout.setSpacing(10)
+        self.btn_previous = QPushButton("◀◀")
+        self.btn_play_pause = QPushButton("▶")
+        self.btn_next = QPushButton("▶▶")
+        for button in (self.btn_previous, self.btn_play_pause, self.btn_next):
+            button.setObjectName("controlBtn")
+            button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        self.btn_previous.clicked.connect(self._on_previous_clicked)
+        self.btn_play_pause.clicked.connect(self._on_play_pause_clicked)
+        self.btn_next.clicked.connect(self._on_next_clicked)
+
+        controls_layout.addStretch(1)
+        controls_layout.addWidget(self.btn_previous)
+        controls_layout.addWidget(self.btn_play_pause)
+        controls_layout.addWidget(self.btn_next)
+        controls_layout.addStretch(1)
+        info.addLayout(controls_layout)
+        info.addStretch(1)
 
         self.time_label = QLabel("00:00 / --:--")
+        info.addWidget(self.time_label)
 
         self.progress = QProgressBar()
         self.progress.setRange(0, 1000)
         self.progress.setValue(0)
         self.progress.setTextVisible(False)
-
-        info.addWidget(self.song_label)
-        info.addWidget(self.artist_label)
-        info.addWidget(self.status_label)
-        info.addStretch(1)
-        info.addWidget(self.time_label)
         info.addWidget(self.progress)
 
         body.addLayout(info, 1)
@@ -211,9 +297,79 @@ class MainWindow(QMainWindow):
         bottom.addWidget(self.settings_btn)
         outer.addLayout(bottom)
 
+        self.grip = QSizeGrip(self)
+        outer.addWidget(self.grip, alignment=Qt.AlignRight | Qt.AlignBottom)
+
         self.apply_theme(self._settings["app"])
         self.setCentralWidget(self.chrome)
+        self._update_scaled_ui()
 
+
+    def _update_scaled_ui(self):
+        """根据窗口尺寸按比例调整主要控件尺寸与字体。"""
+        scale = min(self.width() / self.BASE_WIDTH, self.height() / self.BASE_HEIGHT)
+        scale = max(0.6, min(scale, 3.0))
+
+        def px(value, minimum=1):
+            return max(minimum, round(value * scale))
+
+        margin_h = px(12, 6)
+        margin_top = px(6, 3)
+        outer_layout = self.chrome.layout()
+        outer_layout.setContentsMargins(margin_h, margin_top, px(6, 3), margin_top)
+        outer_layout.setSpacing(px(10, 4))
+
+        title_layout = outer_layout.itemAt(0).layout()
+        if title_layout is not None:
+            title_layout.setSpacing(px(4, 2))
+            title_font = self.findChild(QLabel, "windowTitle").font()
+            title_font.setPointSizeF(max(7.0, 12.0 * scale))
+            self.findChild(QLabel, "windowTitle").setFont(title_font)
+            for button in (self.btn_min, self.btn_max, self.btn_close):
+                button.setFixedSize(px(32, 20), px(28, 18))
+
+        cover_size = px(120, 72)
+        self.cover_label.setFixedSize(cover_size, cover_size)
+        self.cover_label.setStyleSheet(
+            f"background: #2a2a32; border-radius: {px(10, 4)}px; color: #777;"
+        )
+
+        body_layout = outer_layout.itemAt(1).layout()
+        if body_layout is not None:
+            body_layout.setSpacing(px(14, 6))
+            info_layout = body_layout.itemAt(1).layout()
+            if info_layout is not None:
+                info_layout.setSpacing(px(6, 3))
+
+        song_font = self.song_label.font()
+        song_font.setPointSizeF(max(8.0, 14.0 * scale))
+        self.song_label.setFont(song_font)
+
+        artist_font = self.artist_label.font()
+        artist_font.setPointSizeF(max(7.0, 9.0 * scale))
+        self.artist_label.setFont(artist_font)
+
+        status_font = self.status_label.font()
+        status_font.setPointSizeF(max(6.0, 12.0 * scale))
+        self.status_label.setFont(status_font)
+
+        for button in (self.btn_previous, self.btn_play_pause, self.btn_next):
+            button.setFixedHeight(px(36, 24))
+            button_font = button.font()
+            button_font.setPointSizeF(max(8.0, 16.0 * scale))
+            button.setFont(button_font)
+
+        time_font = self.time_label.font()
+        time_font.setPointSizeF(max(7.0, 9.0 * scale))
+        self.time_label.setFont(time_font)
+
+        self.progress.setFixedHeight(px(8, 4))
+        self.settings_btn.setFixedHeight(px(30, 20))
+
+    def resizeEvent(self, event):
+        """窗口大小变化时同步调整界面比例。"""
+        super().resizeEvent(event)
+        self._update_scaled_ui()
 
     def apply_theme(self, app: dict):
         """
@@ -242,7 +398,6 @@ class MainWindow(QMainWindow):
                 background: transparent;
                 color: {text};
                 border: none;
-                font-size: 12px;
             }}
             QPushButton#titleBtn:hover {{
                 background: {border};
@@ -329,10 +484,11 @@ class MainWindow(QMainWindow):
         self.status_label.setText("正在获取歌词…")
 
     def _on_playing(self, playing: bool):
-        """处理播放/暂停状态变化，更新托盘提示。"""
-
+        """处理播放/暂停状态变化，更新托盘提示和按钮图标。"""
         tip = "播放中" if playing else "已暂停"
         self.tray.setToolTip(f"Limbuslikelrc · {tip}")
+
+        self.btn_play_pause.setText("❚❚" if playing else "▶")
 
     def _on_position(self, position: float):
         self._position = max(0.0, float(position))
@@ -458,8 +614,8 @@ class MainWindow(QMainWindow):
             self.cover_label.setText("无封面")
             return
         pix = QPixmap.fromImage(image).scaled(
-            120,
-            120,
+            self.cover_label.width(),
+            self.cover_label.height(),
             Qt.KeepAspectRatioByExpanding,
             Qt.SmoothTransformation,
         )
@@ -505,6 +661,23 @@ class MainWindow(QMainWindow):
             self._settings["app"]["window_width"] = self.width()
             self._settings["app"]["window_height"] = self.height()
         save_settings(self._settings["app"])
+
+    def _on_play_pause_clicked(self):
+        """播放/暂停按钮点击"""
+        from core.cloudmusic_controller import CloudMusicController
+        CloudMusicController.play_pause()
+        # 图标可切换：当前是 ▶ 和 ⏸，但为了简单，可保持图标不变，因为状态可能不同步
+        # 或者根据实际播放状态更新图标，但需要额外的状态查询，暂不实现
+
+    def _on_next_clicked(self):
+        """下一首按钮点击"""
+        from core.cloudmusic_controller import CloudMusicController
+        CloudMusicController.next_track()
+
+    def _on_previous_clicked(self):
+        """上一首按钮点击"""
+        from core.cloudmusic_controller import CloudMusicController
+        CloudMusicController.previous_track()
 
     def closeEvent(self, event):
         pref = self._settings["app"].get("minimize_to_tray_on_close")
@@ -620,20 +793,52 @@ class MainWindow(QMainWindow):
         return None
 
     def _do_resize(self, global_pos: QPoint):
+        """按窗口基准比例缩放，并保持界面整体比例。"""
         geo = self.geometry()
         dx = global_pos.x() - self._drag_pos.x()
         dy = global_pos.y() - self._drag_pos.y()
         self._drag_pos = global_pos
         edge = self._resize_edge
-        min_w, min_h = self.minimumWidth(), self.minimumHeight()
 
-        left, top, right, bottom = geo.left(), geo.top(), geo.right(), geo.bottom()
-        if "left" in edge:
-            left = min(left + dx, right - min_w)
-        if "right" in edge:
-            right = max(right + dx, left + min_w)
-        if "top" in edge:
-            top = min(top + dy, bottom - min_h)
-        if "bottom" in edge:
-            bottom = max(bottom + dy, top + min_h)
-        self.setGeometry(QRect(QPoint(left, top), QPoint(right, bottom)))
+        ratio = self.BASE_WIDTH / self.BASE_HEIGHT
+        min_w = self.MIN_WIDTH
+        min_h = self.MIN_HEIGHT
+
+        left, top = geo.left(), geo.top()
+        width, height = geo.width(), geo.height()
+
+        if edge in ("right", "bottomright", "topright"):
+            new_width = width + dx
+        elif edge in ("left", "bottomleft", "topleft"):
+            new_width = width - dx
+        else:
+            new_width = width
+
+        if edge in ("bottom", "bottomleft", "bottomright"):
+            new_height = height + dy
+        elif edge in ("top", "topleft", "topright"):
+            new_height = height - dy
+        else:
+            new_height = height
+
+        # 角落拖动时取主方向；单边拖动时根据该边反推出另一边。
+        if len(edge) > 5:
+            if abs(dx) >= abs(dy):
+                new_height = new_width / ratio
+            else:
+                new_width = new_height * ratio
+        elif edge in ("left", "right"):
+            new_height = new_width / ratio
+        elif edge in ("top", "bottom"):
+            new_width = new_height * ratio
+
+        new_width = max(min_w, round(new_width))
+        new_height = max(min_h, round(new_width / ratio))
+
+        if edge in ("left", "topleft", "bottomleft"):
+            left = geo.right() - new_width + 1
+        if edge in ("top", "topleft", "topright"):
+            top = geo.bottom() - new_height + 1
+
+        self.setGeometry(left, top, new_width, new_height)
+
