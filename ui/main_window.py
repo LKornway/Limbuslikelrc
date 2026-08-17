@@ -133,7 +133,7 @@ class MainWindow(QMainWindow):
         title.setContentsMargins(0, 0, 0, 0)
 
         title_label = QLabel("Limbuslikelrc")
-        title_label.setStyleSheet("color: #9a9aa8; font-size: 12px;")
+        title_label.setStyleSheet("font-size: 12px;")
         title.addWidget(title_label)
 
         title.addStretch(1)  # 只加这一次，把按钮顶到右边
@@ -182,13 +182,11 @@ class MainWindow(QMainWindow):
         self.song_label.setWordWrap(True)
 
         self.artist_label = QLabel("—")
-        self.artist_label.setStyleSheet("color: #a0a0aa;")
 
         self.status_label = QLabel("")
-        self.status_label.setStyleSheet("color: #e07070; font-size: 12px;")
+        self.status_label.setStyleSheet("font-size: 12px;")
 
         self.time_label = QLabel("00:00 / --:--")
-        self.time_label.setStyleSheet("color: #888; font-size: 12px;")
 
         self.progress = QProgressBar()
         self.progress.setRange(0, 1000)
