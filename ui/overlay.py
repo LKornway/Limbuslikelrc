@@ -174,46 +174,37 @@ class LyricsOverlay(QWidget):
         self.repaint()
 
     def apply_playback_status(self, is_playing):
-        """
-        更新当前歌词动画的播放状态。
-
-        Args:
-            is_playing: 当前歌曲是否正在播放。
-        """
-
+        """更新播放状态，控制帧定时器启停。"""
         self.is_paused = not is_playing
-
-        print(
-            f"[网易云] {'播放' if is_playing else '暂停'}"
-        )
+        if self.is_paused:
+            self.frame_timer.stop()
+            print("[网易云] 暂停，停止帧更新")
+        else:
+            self.frame_timer.start(config.FRAME_INTERVAL)
+            print("[网易云] 播放，恢复帧更新")
 
     def apply_playback_position(self, position):
         """
         用网易云真实播放进度校正歌词时间轴。
 
-        平时仍由 update_frame 按帧平滑推进，保证逐字出现；
-        仅在首次对齐或进度明显跳变（拖动进度条）时强制同步。
-
-        Args:
-            position: 当前歌曲播放进度（秒）。
+        平时由 update_frame 按帧平滑推进，仅在首次启动时强制同步。
+        后续只更新当前时间，并刷新歌词生命周期，避免重建导致位置跳动。
         """
+        target = max(0.0, float(position) + config.LYRIC_MANUAL_OFFSET)
 
-        target = max(
-            0.0,
-            float(position) + config.LYRIC_MANUAL_OFFSET
-        )
-
+        # 首次启动：需要完整重建，以确保时间轴对齐
         if not self._has_external_position:
             self.current_time = target
             self._has_external_position = True
             self._resync_lyrics_to_time()
             return
 
-        delta = target - self.current_time
+        # 后续只更新时间，不重建
+        self.current_time = target
 
-        if abs(delta) >= 0.5:
-            self.current_time = target
-            self._resync_lyrics_to_time()
+        # 立即刷新歌词生命周期（创建新歌词、启动淡出）
+        self.update_lyrics()
+        self.update()
 
     def _resync_lyrics_to_time(self):
         """
