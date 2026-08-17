@@ -52,7 +52,14 @@ class LyricsOverlay(QWidget):
     管理歌词状态、动画更新、位置计算以及绘制。
     """
 
-    def __init__(self, lyrics):
+    def __init__(self, lyrics, watcher: CloudMusicWatcher = None):
+        """
+        初始化歌词悬浮窗口。
+
+        Args:
+            lyrics: 初始歌词列表（通常为空）。
+            watcher: CloudMusicWatcher 实例，若未提供则新建。
+        """
 
         super().__init__()
 
@@ -68,7 +75,7 @@ class LyricsOverlay(QWidget):
             self.clear_lyrics
         )
 
-        self.cloudmusic_watcher = CloudMusicWatcher()
+        self.cloudmusic_watcher = watcher or CloudMusicWatcher()
 
         self.netease_source.set_position_provider(
             self.cloudmusic_watcher.current_position
@@ -143,12 +150,11 @@ class LyricsOverlay(QWidget):
         self.frame_timer.start(FRAME_INTERVAL)
 
     def apply_lyrics(self, lyrics, start_offset, song, artist):
-        """
-        应用新歌曲的歌词数据并重置歌词时间轴。
+        """应用新歌曲的歌词数据并重置歌词时间轴。
 
         Args:
             lyrics: 解析后的歌词列表。
-            start_offset: 歌词显示的起始时间偏移。
+            start_offset: 歌词显示的起始时间偏移（秒）。
             song: 歌曲名称。
             artist: 歌手名称。
         """
@@ -157,8 +163,6 @@ class LyricsOverlay(QWidget):
         self.next_index = 0
         self.active_lyrics.clear()
 
-        # 设置到当前播放时间，update_lyrics() 会一次创建
-        # 该时间点之前应该已经出现的歌词。
         self.current_time = start_offset
         self._has_external_position = True
         self._resync_lyrics_to_time()
@@ -169,8 +173,6 @@ class LyricsOverlay(QWidget):
         清除当前歌曲的歌词显示状态。
         """
 
-        # 歌曲切换时立即清除上一首歌词。
-        # 不修改播放时间，新歌词准备完成后由 apply_lyrics() 重新建立。
         self.lyrics = []
 
         self.active_lyrics.clear()
@@ -265,7 +267,6 @@ class LyricsOverlay(QWidget):
             float(position) + LYRIC_MANUAL_OFFSET
         )
 
-        # 尚未对齐过外部进度：做一次初始同步。
         if not self._has_external_position:
             self.current_time = target
             self._has_external_position = True
@@ -274,8 +275,6 @@ class LyricsOverlay(QWidget):
 
         delta = target - self.current_time
 
-        # 进度明显跳变时视为拖动进度条或大幅校正，
-        # 此时重建歌词；小幅差异交给本地平滑计时消化。
         if abs(delta) >= 0.5:
             self.current_time = target
             self._resync_lyrics_to_time()
@@ -300,7 +299,6 @@ class LyricsOverlay(QWidget):
 
         for index, line in enumerate(self.lyrics):
 
-            # 尚未到点的句子留给后续 update_lyrics 创建
             if line.timestamp > t:
                 break
 
@@ -315,20 +313,17 @@ class LyricsOverlay(QWidget):
             else:
                 end_time = start_time + MAX_LYRIC_LIFETIME
 
-            # 已完全结束的句子跳过
             if t >= end_time:
                 continue
 
             visible_indices.append(index)
 
-        # 只保留最近若干句，避免瞬间铺满
         if len(visible_indices) > MAX_ACTIVE_LINES:
             visible_indices = visible_indices[-MAX_ACTIVE_LINES:]
 
         for index in visible_indices:
             self.create_lyric(index)
 
-        # 下一次正常推进从"当前时间之后的第一句"开始
         self.next_index = 0
         while (
                 self.next_index < len(self.lyrics)
@@ -371,8 +366,6 @@ class LyricsOverlay(QWidget):
         更新歌词生命周期和字符抖动，并请求重绘。
         """
 
-        # 使用 monotonic() 计算实际经过时间，
-        # 避免 QTimer 的不稳定触发间隔影响歌词时间轴。
         now = time.monotonic()
 
         elapsed = (
@@ -382,8 +375,6 @@ class LyricsOverlay(QWidget):
 
         self.last_frame_time = now
 
-        # 限制单帧最大时间跨度，避免程序卡顿恢复后
-        # 一次性跳过大量歌词。
         elapsed = min(
             elapsed,
             0.1
@@ -522,39 +513,6 @@ class LyricsOverlay(QWidget):
             text
         )
 
-        line_widths = []
-
-        for line_text in lines:
-
-            width = 0.0
-
-            for char in line_text:
-
-                width += (
-                    self.fm.horizontalAdvance(
-                        char
-                    )
-                    + CHAR_SPACING
-                )
-
-            if line_text:
-
-                width -= CHAR_SPACING
-
-            line_widths.append(
-                width
-            )
-
-        width = max(
-            line_widths,
-            default=0
-        )
-
-        height = (
-            len(lines)
-            * self.line_height
-        )
-
         # 每句歌词创建时随机确定旋转角度，
         # 后续绘制过程中保持不变。
         angle = self.random.randint(
@@ -673,11 +631,8 @@ class LyricsOverlay(QWidget):
 
 
     @staticmethod
-    def get_global_char_index(
-        lines,
-        line_index,
-        char_index
-    ):
+    def get_global_char_index(lines, line_index, char_index):
+        """计算字符在所有行中的全局索引。"""
 
         total = 0
 
@@ -773,7 +728,6 @@ class LyricsOverlay(QWidget):
                     current
                 )
 
-            # 不超过两行时直接采用按单词分行的结果。
             if len(lines) <= 2:
 
                 return lines
@@ -1335,8 +1289,8 @@ class LyricsOverlay(QWidget):
 
         painter.restore()
 
-
     def keyPressEvent(self, event):
+        """处理键盘事件（ESC 退出）。"""
 
         if event.key() == Qt.Key_Escape:
 

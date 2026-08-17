@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 
 from config import FADE_DURATION
 
+import config
+
 
 @dataclass
 class LRCLine:
@@ -99,10 +101,10 @@ class LyricObject:
         获取当前歌词透明度。
 
         Args:
-            current_time: 当前时间。
+            current_time: 当前时间（秒）。
 
         Returns:
-            当前透明度，范围为 0 到 1。
+            float: 透明度，范围 0~1。
         """
 
         if not self.fading:
@@ -114,7 +116,7 @@ class LyricObject:
         )
 
         progress = (
-            elapsed / FADE_DURATION
+            elapsed / config.FADE_DURATION
         )
 
         return max(
@@ -130,10 +132,10 @@ class LyricObject:
         判断歌词是否完成淡出。
 
         Args:
-            current_time: 当前时间。
+            current_time: 当前时间（秒）。
 
         Returns:
-            是否已经完成淡出。
+            bool: 是否已完成淡出。
         """
 
         if not self.fading:
@@ -143,5 +145,5 @@ class LyricObject:
             current_time
             >=
             self.fade_start_time
-            + FADE_DURATION
+            + config.FADE_DURATION
         )

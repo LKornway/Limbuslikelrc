@@ -55,10 +55,10 @@ class NetEaseMusic:
 
         Args:
             song: 歌曲名称。
-            artist: 歌手名称。
+            artist: 歌手名称（可选）。
 
         Returns:
-            LRC 歌词文本，获取失败返回 None。
+            str | None: LRC 歌词文本，获取失败返回 None。
         """
 
         keyword = f"{song} {artist}".strip()
@@ -177,6 +177,9 @@ class NeteaseSource(QObject):
     def __init__(self, parent=None):
         """
         初始化歌词来源服务。
+
+        Args:
+            parent: 可选的 Qt 父对象。
         """
 
         super().__init__(parent)
@@ -214,13 +217,12 @@ class NeteaseSource(QObject):
 
     def handle_track_change(self, song, artist, track_id_str):
         """
-        处理当前歌曲变化。
-
-        由 CloudMusicWatcher.track_changed 信号触发。
+        处理当前歌曲变化，由 CloudMusicWatcher.track_changed 触发。
 
         Args:
             song: 歌曲名称。
             artist: 歌手名称。
+            track_id_str: 歌曲 ID 字符串。
         """
 
         if not song:
@@ -297,14 +299,11 @@ class NeteaseSource(QObject):
         """
         处理后台歌词请求结果。
 
-        根据请求状态解析歌词，
-        并通过信号发送给显示层。
-
         Args:
             song: 歌曲名称。
             artist: 歌手名称。
             lrc_text: LRC 歌词文本。
-            status: 请求结果状态。
+            status: 请求结果状态，'ok' 或 'error'。
         """
 
         self.fetching = False
@@ -328,16 +327,6 @@ class NeteaseSource(QObject):
             )
 
             return
-
-        if status != "ok":
-
-            print(
-                f"[网易云] 获取歌词失败：{song} - {artist}"
-            )
-
-            return
-
-        lyrics = parse_lrc_text(lrc_text)
 
         if status != "ok":
             print(f"[网易云] 获取歌词失败：{song} - {artist}")

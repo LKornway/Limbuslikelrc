@@ -70,6 +70,14 @@ class SettingsDialog(QDialog):
     """
 
     def __init__(self, app_settings: dict, parent=None):
+        """
+        构建设置对话框。
+
+        Args:
+            app_settings: 应用设置字典。
+            parent: 父窗口。
+        """
+
         super().__init__(parent)
 
         self.setWindowTitle("设置")
@@ -171,6 +179,18 @@ class SettingsDialog(QDialog):
         root.addLayout(buttons)
 
     def _make_editor(self, key, kind, value):
+        """
+        根据配置类型创建对应的编辑控件。
+
+        Args:
+            key: 配置键名。
+            kind: 配置类型（'color', bool, int, float, str）。
+            value: 当前值。
+
+        Returns:
+            QWidget: 编辑控件。
+        """
+
         if kind == "color":
             if isinstance(value, QColor):
                 value_str = value.name(QColor.HexRgb)
@@ -179,7 +199,7 @@ class SettingsDialog(QDialog):
             row = QWidget()
             layout = QHBoxLayout(row)
             layout.setContentsMargins(0, 0, 0, 0)
-            line = QLineEdit(str(value))
+            line = QLineEdit(value_str)
             btn = QPushButton("选择")
             btn.clicked.connect(lambda: self._pick_color(line))
             layout.addWidget(line)
@@ -210,11 +230,25 @@ class SettingsDialog(QDialog):
         return line
 
     def _pick_color(self, line: QLineEdit):
+        """打开颜色选择对话框，将结果填入输入框。"""
+
         color = QColorDialog.getColor(QColor(line.text()), self)
         if color.isValid():
             line.setText(color.name())
 
     def _read_editor(self, key, kind, editor):
+        """
+        从编辑控件读取当前值。
+
+        Args:
+            key: 配置键名（未使用，保留用于扩展）。
+            kind: 配置类型。
+            editor: 编辑控件。
+
+        Returns:
+            读取到的值（类型由 kind 决定）。
+        """
+
         if kind == "color":
             return editor._value_widget.text().strip()
         if kind is bool:
@@ -226,6 +260,8 @@ class SettingsDialog(QDialog):
         return editor.text().strip()
 
     def _on_save(self):
+        """保存所有设置并关闭对话框。"""
+
         config_data = {}
         for key, kind in CONFIG_KEYS.items():
             config_data[key] = self._read_editor(
@@ -244,7 +280,11 @@ class SettingsDialog(QDialog):
         self.accept()
 
     def app_settings(self) -> dict:
+        """返回当前应用设置字典。"""
+
         return dict(self._app_settings)
 
     def _open_github(self):
+        """在浏览器中打开项目 GitHub 页面。"""
+
         QDesktopServices.openUrl(QUrl(GITHUB_URL))

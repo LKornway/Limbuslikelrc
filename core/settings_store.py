@@ -13,11 +13,11 @@ from PySide6.QtGui import QColor
 
 import config
 
-# ---------- 应用行为及主题默认值 ----------
+
 APP_DEFAULTS = {
     "minimize_to_tray_on_close": None,
-    "window_width": 300,
-    "window_height": 100,
+    "window_width": 360,
+    "window_height": 250,
     "ui_bg": "#1a1a1f",
     "ui_border": "#3a3a45",
     "ui_accent": "#d8a523",
@@ -53,15 +53,33 @@ CONFIG_KEYS = {
     "FRAME_INTERVAL": int,
 }
 
-# ---------- 辅助函数 ----------
+
 def _color_to_str(value) -> str:
-    """将 QColor 对象转为 #RRGGBB 字符串，无效时返回白色"""
+    """
+    将 QColor 对象转为 #RRGGBB 字符串。
+
+    Args:
+        value: QColor 对象。
+
+    Returns:
+        str: 十六进制颜色码，无效时返回 '#ffffff'。
+    """
+
     if isinstance(value, QColor) and value.isValid():
         return value.name(QColor.HexRgb)
     return "#ffffff"  # 安全默认值
 
 def _str_to_color(value) -> QColor:
-    """将字符串转为 QColor，无效时返回白色"""
+    """
+    将字符串转为 QColor，无效时返回白色。
+
+    Args:
+        value: 颜色字符串。
+
+    Returns:
+        QColor: 有效的 QColor 对象。
+    """
+
     if not value or not isinstance(value, str):
         return QColor("#ffffff")
     color = QColor(value)
@@ -70,13 +88,26 @@ def _str_to_color(value) -> QColor:
     return QColor("#ffffff")   # 无效则返回白色
 
 def settings_path() -> Path:
+    """
+    返回用户设置文件路径，并自动创建目录。
+
+    Returns:
+        Path: settings.json 的完整路径。
+    """
+
     base = os.environ.get("APPDATA") or str(Path.home())
     folder = Path(base) / "Limbuslikelrc"
     folder.mkdir(parents=True, exist_ok=True)
     return folder / "settings.json"
 
 def export_config_snapshot() -> dict:
-    """导出当前 config 中可配置字段的快照"""
+    """
+    导出当前 config 中可配置字段的快照。
+
+    Returns:
+        dict: 配置键值对。
+    """
+
     data = {}
     for key, kind in CONFIG_KEYS.items():
         value = getattr(config, key)
@@ -87,7 +118,13 @@ def export_config_snapshot() -> dict:
     return data
 
 def apply_config_snapshot(data: dict) -> None:
-    """将快照写回 config 模块（运行时生效）"""
+    """
+    将快照写回 config 模块，运行时生效。
+
+    Args:
+        data: 配置数据字典。
+    """
+
     for key, kind in CONFIG_KEYS.items():
         if key not in data:
             continue
@@ -110,7 +147,13 @@ def apply_config_snapshot(data: dict) -> None:
             continue
 
 def load_settings() -> dict:
-    """读取用户设置；不存在则返回默认结构"""
+    """
+    读取用户设置；不存在则返回默认结构。
+
+    Returns:
+        dict: 包含 "app" 和 "config" 的字典。
+    """
+
     path = settings_path()
     result = {
         "app": dict(APP_DEFAULTS),
@@ -150,7 +193,14 @@ def load_settings() -> dict:
     return result
 
 def save_settings(app: dict, config_data: dict | None = None) -> None:
-    """保存用户设置到本地 JSON"""
+    """
+    保存用户设置到本地 JSON。
+
+    Args:
+        app: 应用设置字典。
+        config_data: 可选的配置数据，若未提供则自动导出。
+    """
+
     if config_data is None:
         config_data = export_config_snapshot()
 

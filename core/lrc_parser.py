@@ -39,7 +39,7 @@ def parse_lrc_text(lrc_text):
         lrc_text: LRC 格式歌词字符串。
 
     Returns:
-        按时间排序的 LRCLine 列表。
+        list[LRCLine]: 按时间排序的 LRCLine 列表。
     """
 
     if not lrc_text:

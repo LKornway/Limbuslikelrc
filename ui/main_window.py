@@ -64,7 +64,14 @@ class MainWindow(QMainWindow):
     # 边缘缩放感应宽度
     EDGE = 6
 
-    def __init__(self):
+    def __init__(self, watcher: CloudMusicWatcher = None):
+        """
+        初始化主窗口。
+
+        Args:
+            watcher: CloudMusicWatcher 实例，若未提供则新建。
+        """
+
         super().__init__()
 
         self._settings = load_settings()
@@ -76,10 +83,10 @@ class MainWindow(QMainWindow):
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.resize(
-            int(app_cfg.get("window_width", 420)),
-            int(app_cfg.get("window_height", 280)),
+            int(app_cfg.get("window_width", 360)),
+            int(app_cfg.get("window_height", 250)),
         )
-        self.setMinimumSize(360, 220)
+        self.setMinimumSize(0, 0)
 
         self._drag_pos = None
         self._resize_edge = None
@@ -99,13 +106,15 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._build_tray()
 
-        self.watcher = CloudMusicWatcher(self)
+        self.watcher = watcher or CloudMusicWatcher()
         self.watcher.track_changed.connect(self._on_track)
         self.watcher.is_playing_changed.connect(self._on_playing)
         self.watcher.position_changed.connect(self._on_position)
 
 
     def _build_ui(self):
+        """构建主窗口界面控件与布局。"""
+
         self.chrome = QWidget()
         self.chrome.setObjectName("chrome")
 
@@ -202,11 +211,13 @@ class MainWindow(QMainWindow):
         self.apply_theme(self._settings["app"])
         self.setCentralWidget(self.chrome)
 
-        self.setCentralWidget(self.chrome)
 
     def apply_theme(self, app: dict):
         """
         根据用户设置刷新主界面配色。
+
+        Args:
+            app: 包含颜色键的字典。
         """
 
         bg = app.get("ui_bg", "#1a1a1f")
@@ -270,6 +281,8 @@ class MainWindow(QMainWindow):
         )
 
     def _build_tray(self):
+        """构建系统托盘图标及菜单。"""
+
         self.tray = QSystemTrayIcon(self)
 
         # 无图标资源时用简单色块，避免托盘不可见
@@ -290,8 +303,16 @@ class MainWindow(QMainWindow):
         self.tray.activated.connect(self._on_tray_activated)
         self.tray.show()
 
-
     def _on_track(self, song: str, artist: str, track_id_str: str):
+        """
+        处理歌曲切换事件。
+
+        Args:
+            song: 歌曲名称。
+            artist: 歌手名称。
+            track_id_str: 歌曲 ID 字符串。
+        """
+
         print(f"[主界面] 收到歌曲变化：{song} - {artist}")
         self._song = song
         self._artist = artist
@@ -306,6 +327,8 @@ class MainWindow(QMainWindow):
         self.status_label.setText("正在获取歌词…")
 
     def _on_playing(self, playing: bool):
+        """处理播放/暂停状态变化，更新托盘提示。"""
+
         tip = "播放中" if playing else "已暂停"
         self.tray.setToolTip(f"Limbuslikelrc · {tip}")
 
@@ -321,16 +344,15 @@ class MainWindow(QMainWindow):
             self.progress.setValue(int(ratio * 1000))
         else:
             dur_text = "--:--"
-            # 无总时长时只显示流式前进感
-            self.progress.setValue(int(self._position * 10) % 1000)
+            self.progress.setValue(0)
         self.time_label.setText(f"{pos_text} / {dur_text}")
 
     def set_lyric_status(self, text: str):
-        #更新主界面歌词状态提示。
+        """更新主界面歌词状态提示。"""
         self.status_label.setText(text)
 
     def on_lyrics_failed(self, song: str, artist: str):
-        #NeteaseSource 通知歌词获取失败时调用。
+        """NeteaseSource 通知歌词获取失败时调用。"""
         self.status_label.setText("歌词获取失败")
 
 
@@ -340,6 +362,16 @@ class MainWindow(QMainWindow):
         return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
     def _fetch_meta_async(self, song, artist, track_id_str, song_key):
+        """
+        异步获取歌曲时长和专辑封面。
+
+        Args:
+            song: 歌曲名称。
+            artist: 歌手名称。
+            track_id_str: 歌曲 ID 字符串。
+            song_key: 用于校验结果的唯一键。
+        """
+
         print(f"[主界面] 开始获取歌曲时长和专辑封面，track_id={track_id_str}")
 
         def worker():
@@ -433,6 +465,8 @@ class MainWindow(QMainWindow):
         self._update_progress_ui()
 
     def _on_duration(self, duration: float, song_key: str):
+        """处理时长获取结果，更新进度条。"""
+
         if song_key != self._song_key:
             return
         if duration > 0:
@@ -444,11 +478,9 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             self._settings["app"] = dialog.app_settings()
 
-            # 主界面主题（你如果有 apply_theme 就保留）
             if hasattr(self, "apply_theme"):
                 self.apply_theme(self._settings["app"])
 
-            # 通知歌词层刷新字体等
             if getattr(self, "overlay", None) is not None:
                 self.overlay.reload_config()
 
@@ -545,7 +577,7 @@ class MainWindow(QMainWindow):
                     event.globalPosition().toPoint() - self._drag_pos
                 )
             return
-        # 光标反馈
+
         edge = self._hit_edge(pos) if not self._maximized else None
         cursors = {
             "left": Qt.SizeHorCursor,

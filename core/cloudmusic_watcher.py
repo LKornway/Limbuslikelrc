@@ -15,19 +15,16 @@ from cloudmusic_detector import CloudMusic
 
 class CloudMusicWatcher(QObject):
     """
-    网易云本地播放状态监听器。
+    网易云本地播放状态监听器，
 
-    在后台启动 CloudMusic 监听，并在主线程中轮询状态快照，
-    将切歌、播放/暂停与进度变化以信号形式发给界面层。
+    通过轮询提供切歌、
+    播放/暂停和进度信号。
     """
 
-    # 当前是否正在播放。
     is_playing_changed = Signal(bool)
 
-    # 当前播放进度（秒）。
     position_changed = Signal(float)
 
-    # 当前歌曲名、歌手名。
     track_changed = Signal(str, str, str)
 
     def __init__(self, parent=None, poll_interval_ms=200):
@@ -84,7 +81,6 @@ class CloudMusicWatcher(QObject):
                     "[网易云] 本地播放状态监听已启动"
                 )
 
-                # 启动完成后立即同步一次当前状态。
                 self._poll_state()
 
             except FileNotFoundError as exc:
@@ -170,7 +166,6 @@ class CloudMusicWatcher(QObject):
         track_id = getattr(track, "id", 0)
         track_id_str = str(track_id) if track_id else ""
 
-        # 切歌：歌曲名或歌手发生变化。
         if (
                 song
                 and
@@ -199,8 +194,7 @@ class CloudMusicWatcher(QObject):
 
         position = float(state.position or 0.0)
 
-        # 进度有变化时通知界面，
-        # 微小抖动由显示层自行过滤。
+        # 进度有变化时通知界面
         if (
                 self._last_position is None
                 or
