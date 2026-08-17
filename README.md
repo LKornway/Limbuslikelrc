@@ -4,6 +4,12 @@
 
 自动识别当前播放歌曲与进度 → 获取 LRC 歌词 → 以逐字出现、抖动、描边、随机倾斜的方式显示在全屏透明悬浮层上。
 
+## 界面预览
+
+![歌词效果](assets/effect.png)
+![程序主页面](assets/Interface_effect.png)
+![设置页面](assets/Setting_effect.png)
+
 ## 功能
 
 - 通过网易云本地日志（`cloudmusic.elog`）识别当前歌曲、歌手（无需额外插件）

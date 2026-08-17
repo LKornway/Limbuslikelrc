@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import threading
+import os
 
 import requests
 from PySide6.QtCore import (
@@ -78,13 +79,17 @@ class MainWindow(QMainWindow):
         app_cfg = self._settings["app"]
 
         self.setWindowTitle("Limbuslikelrc")
+
+        icon_path = os.path.join(os.path.dirname(__file__), "..", "assets", "app.ico")
+        self.setWindowIcon(QIcon(icon_path))
+
         self.setWindowFlags(
             Qt.FramelessWindowHint | Qt.Window
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.resize(
             int(app_cfg.get("window_width", 360)),
-            int(app_cfg.get("window_height", 250)),
+            int(app_cfg.get("window_height", 220)),
         )
         self.setMinimumSize(0, 0)
 
@@ -285,10 +290,9 @@ class MainWindow(QMainWindow):
 
         self.tray = QSystemTrayIcon(self)
 
-        # 无图标资源时用简单色块，避免托盘不可见
-        pix = QPixmap(64, 64)
-        pix.fill(QColor("#d8a523"))
-        self.tray.setIcon(QIcon(pix))
+        icon_path = os.path.join(os.path.dirname(__file__), "..", "assets", "app.ico")
+        self.tray.setIcon(QIcon(icon_path))
+
         self.tray.setToolTip("Limbuslikelrc")
 
         menu = QMenu()
