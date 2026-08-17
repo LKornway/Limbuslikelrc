@@ -63,6 +63,9 @@ def parse_lrc_text(lrc_text):
         if not raw_line:
             continue
 
+        # 将 [mm:ss:cc] 转换为 [mm:ss.cc]
+        raw_line = re.sub(r'\[(\d+):(\d+):(\d+)\]', r'[\1:\2.\3]', raw_line)
+
         matches = list(pattern.finditer(raw_line))
 
         if not matches:

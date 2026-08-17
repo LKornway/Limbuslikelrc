@@ -88,8 +88,8 @@ class MainWindow(QMainWindow):
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.resize(
-            int(app_cfg.get("window_width", 360)),
-            int(app_cfg.get("window_height", 220)),
+            int(app_cfg.get("window_width", 400)),
+            int(app_cfg.get("window_height", 250)),
         )
         self.setMinimumSize(0, 0)
 

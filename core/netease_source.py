@@ -154,6 +154,36 @@ class NetEaseMusic:
 
         return None
 
+    @staticmethod
+    def fetch_lyrics_by_id(track_id):
+        """直接通过歌曲 ID 获取 LRC 歌词。
+
+        Args:
+            track_id: 歌曲 ID（字符串或整数）。
+
+        Returns:
+            str | None: LRC 歌词文本，获取失败返回 None。
+        """
+        try:
+            lyric_url = "https://music.163.com/api/song/lyric"
+            response = requests.get(
+                lyric_url,
+                params={"id": track_id, "lv": 1, "kv": 1, "tv": -1},
+                headers=NetEaseMusic.HEADERS,
+                timeout=5
+            )
+            response.raise_for_status()
+            data = response.json()
+            lrc = data.get("lrc", {}).get("lyric", "")
+            if lrc and "[" in lrc:
+                return lrc
+            else:
+                print(f"[网易云] ID {track_id} 没有可用 LRC")
+                return None
+        except Exception as e:
+            print(f"[网易云] 通过 ID 获取歌词失败: {e}")
+            return None
+
 
 class NeteaseSource(QObject):
     """
@@ -192,6 +222,8 @@ class NeteaseSource(QObject):
 
         self.fetching = False
         self.current_song_key = None
+
+        self._current_track_id = None
 
         # 发起歌词请求时的歌曲进度（秒）。
         # 请求完成后作为歌词时间轴起点，
@@ -242,6 +274,7 @@ class NeteaseSource(QObject):
             pass
 
         self.current_song_key = song_key
+        self._current_track_id = track_id_str
         self._pending_song = song
         self._pending_artist = artist or ""
 
@@ -269,14 +302,14 @@ class NeteaseSource(QObject):
 
         self.fetching = True
 
-        # 在线程中执行歌词请求，避免阻塞 Qt 主线程。
         def worker():
-
-            lrc = NetEaseMusic.fetch_lyrics(
-                song,
-                artist
-            )
-
+            # 优先使用 track_id
+            lrc = None
+            if self._current_track_id and self._current_track_id != "0":
+                lrc = NetEaseMusic.fetch_lyrics_by_id(self._current_track_id)
+            if not lrc:
+                # 回退到搜索
+                lrc = NetEaseMusic.fetch_lyrics(song, artist)
             self.bridge.result.emit(
                 song,
                 artist or "",
