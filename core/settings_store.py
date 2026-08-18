@@ -22,6 +22,11 @@ APP_DEFAULTS = {
     "ui_border": "#3a3a45",
     "ui_accent": "#d8a523",
     "ui_text": "#f2f2f2",
+    "hotkey_play_pause": ["ctrl", "alt", "p"],
+    "hotkey_next": ["ctrl", "alt", "right"],
+    "hotkey_previous": ["ctrl", "alt", "left"],
+    "hotkey_volume_up": ["ctrl", "alt", "up"],
+    "hotkey_volume_down": ["ctrl", "alt", "down"],
 }
 
 GITHUB_URL = "https://github.com/LKornway/Limbuslikelrc"

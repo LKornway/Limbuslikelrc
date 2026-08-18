@@ -19,6 +19,18 @@ class CloudMusicController:
     }
 
     @classmethod
+    def update_key_map(cls, custom_map: dict):
+        """
+        从外部配置更新热键映射。
+
+        Args:
+            custom_map: 包含 play_pause, next 等键的字典，值为列表如 ["ctrl", "alt", "p"]
+        """
+        for action, keys in custom_map.items():
+            if action in cls.KEY_MAP and isinstance(keys, list) and keys:
+                cls.KEY_MAP[action] = keys
+
+    @classmethod
     def play_pause(cls):
         pyautogui.hotkey(*cls.KEY_MAP["play_pause"])
 

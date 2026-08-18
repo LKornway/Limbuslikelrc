@@ -72,33 +72,18 @@ class CloudMusicWatcher(QObject):
         """
 
         def runner():
-
             try:
                 self._cm.start()
                 self._started = True
 
-                print(
-                    "[网易云] 本地播放状态监听已启动"
-                )
-
-                self._poll_state()
+                print("[网易云] 本地播放状态监听已启动")
 
             except FileNotFoundError as exc:
-
-                print(
-                    f"[网易云] 未找到 cloudmusic.elog：{exc}"
-                )
-
+                print(f"[网易云] 未找到 cloudmusic.elog：{exc}")
             except Exception as exc:
+                print(f"[网易云] 监听启动失败：{exc}")
 
-                print(
-                    f"[网易云] 监听启动失败：{exc}"
-                )
-
-        threading.Thread(
-            target=runner,
-            daemon=True
-        ).start()
+        threading.Thread(target=runner, daemon=True).start()
 
     def _on_track_event(self, track):
         """
@@ -108,21 +93,21 @@ class CloudMusicWatcher(QObject):
         这里仅用于尽快触发一次状态刷新。
         """
 
-        self._poll_state()
+        pass
 
     def _on_state_event(self, state):
         """
         CloudMusic 播放/暂停回调。
         """
 
-        self._poll_state()
+        pass
 
     def _on_seek_event(self, position):
         """
         CloudMusic 进度拖拽回调。
         """
 
-        self._poll_state()
+        pass
 
     def _poll_state(self):
         """

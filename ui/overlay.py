@@ -174,21 +174,20 @@ class LyricsOverlay(QWidget):
         self.repaint()
 
     def apply_playback_status(self, is_playing):
-        """更新播放状态，控制帧定时器启停。"""
+        """更新播放状态，控制歌词时间轴推进。"""
         self.is_paused = not is_playing
+
         if self.is_paused:
-            self.frame_timer.stop()
-            print("[网易云] 暂停，停止帧更新")
+            print("[网易云] 暂停，时间轴冻结，抖动保持")
         else:
-            self.frame_timer.start(config.FRAME_INTERVAL)
-            print("[网易云] 播放，恢复帧更新")
+            print("[网易云] 播放，恢复时间轴推进")
 
     def apply_playback_position(self, position):
         """
         用网易云真实播放进度校正歌词时间轴。
 
-        平时由 update_frame 按帧平滑推进，仅在首次启动时强制同步。
-        后续只更新当前时间，并刷新歌词生命周期，避免重建导致位置跳动。
+        平时由 update_frame 按帧平滑推进，仅在首次启动或检测到进度跳跃时强制同步。
+        正常播放时忽略微小的进度差异，避免覆盖导致的时间轴卡顿。
         """
         target = max(0.0, float(position) + config.LYRIC_MANUAL_OFFSET)
 
@@ -199,12 +198,15 @@ class LyricsOverlay(QWidget):
             self._resync_lyrics_to_time()
             return
 
-        # 后续只更新时间，不重建
-        self.current_time = target
+        # 检测进度是否发生大幅度跳跃（通常是用户拖动了进度条）
+        diff = target - self.current_time
 
-        # 立即刷新歌词生命周期（创建新歌词、启动淡出）
-        self.update_lyrics()
-        self.update()
+        # 如果进度回退超过 1 秒，或者突然快进超过 3 秒，认为是拖动进度条，需要重新同步
+        if diff < -1.0 or diff > 3.0:
+            self.current_time = target
+            self._resync_lyrics_to_time()
+            return
+
 
     def _resync_lyrics_to_time(self):
         """
@@ -303,10 +305,6 @@ class LyricsOverlay(QWidget):
                 pass
 
         self.showFullScreen()
-
-
-        self.showFullScreen()
-
 
     def update_frame(self):
         """

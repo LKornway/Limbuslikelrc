@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QIcon
+from PySide6.QtCore import Qt, QUrl, QTimer
+from PySide6.QtGui import QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -64,6 +64,100 @@ CONFIG_LABELS = {
 }
 
 
+class HotkeyEdit(QLineEdit):
+    """自定义热键录入框。点击后监听按键，转换为 pyautogui 格式。强制要求包含修饰键。"""
+
+    def __init__(self, keys, parent=None):
+        super().__init__(parent)
+        self.setReadOnly(True)
+        self.keys = list(keys) if keys else []
+        self._recording = False
+
+        # 用于显示错误提示后自动恢复的定时器
+        self._warning_timer = QTimer(self)
+        self._warning_timer.setSingleShot(True)
+        self._warning_timer.timeout.connect(self._update_display)
+
+        self._update_display()
+        self.setFocusPolicy(Qt.ClickFocus)
+
+    def _update_display(self):
+        """正常显示当前保存的热键"""
+        self.setStyleSheet("")  # 清除可能存在的红色警告样式
+        if not self.keys:
+            self.setText("未设置")
+        else:
+            self.setText(" + ".join(k.capitalize() for k in self.keys))
+
+    def mousePressEvent(self, event):
+        self.setText("请按下新的快捷键... (Esc取消)")
+        self._warning_timer.stop()  # 停止可能正在倒计时的警告
+        self._recording = True
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event):
+        if not self._recording:
+            return super().keyPressEvent(event)
+
+        key = event.key()
+        # Esc 或 Backspace 取消录入
+        if key in (Qt.Key_Escape, Qt.Key_Backspace):
+            self._recording = False
+            self._update_display()
+            return
+
+        # 忽略单独的修饰键，等待组合键
+        if key in (Qt.Key_Control, Qt.Key_Alt, Qt.Key_Shift, Qt.Key_Meta):
+            return
+
+        mods = event.modifiers()
+        keys = []
+        if mods & Qt.ControlModifier: keys.append("ctrl")
+        if mods & Qt.AltModifier: keys.append("alt")
+        if mods & Qt.ShiftModifier: keys.append("shift")
+        if mods & Qt.MetaModifier: keys.append("super")
+
+        # 核心校验：必须包含至少一个修饰键
+        if not keys:
+            self._recording = False
+            self.setText("⚠ 必须包含 Ctrl/Alt/Shift 等修饰键")
+            self.setStyleSheet("color: #ff6b6b;")
+            self._warning_timer.start(1500)
+            return
+
+
+        # Qt按键码转 pyautogui 按键名
+        special_map = {
+            Qt.Key_Left: "left", Qt.Key_Right: "right", Qt.Key_Up: "up", Qt.Key_Down: "down",
+            Qt.Key_Space: "space", Qt.Key_Return: "enter", Qt.Key_Enter: "enter",
+            Qt.Key_Tab: "tab", Qt.Key_Delete: "delete", Qt.Key_Backspace: "backspace",
+        }
+
+        for i in range(1, 13):
+            special_map[getattr(Qt, f'Key_F{i}')] = f"f{i}"
+
+        if key in special_map:
+            keys.append(special_map[key])
+        else:
+
+            text = event.text().strip().lower()
+            if not text:
+                return
+            keys.append(text)
+
+        if keys:
+            self.keys = keys
+            self._recording = False
+            self._update_display()
+
+    def focusOutEvent(self, event):
+        # 失去焦点时取消录入状态
+        if self._recording:
+            self._recording = False
+            self._update_display()
+        super().focusOutEvent(event)
+
+
 class SettingsDialog(QDialog):
     """
     应用设置窗口。
@@ -106,6 +200,28 @@ class SettingsDialog(QDialog):
         body = QWidget()
         form_host = QVBoxLayout(body)
 
+        # 控制热键
+        hotkey_box = QGroupBox("控制热键 (点击输入框后按下新快捷键)")
+        hotkey_form = QFormLayout(hotkey_box)
+
+        self._hotkey_editors = {}
+        hotkey_fields = [
+            ("hotkey_play_pause", "播放 / 暂停"),
+            ("hotkey_next", "下一首"),
+            ("hotkey_previous", "上一首"),
+            ("hotkey_volume_up", "音量增加"),
+            ("hotkey_volume_down", "音量减少"),
+        ]
+
+        for key, label in hotkey_fields:
+            # 优先读取用户已保存的值，否则用默认值
+            value = self._app_settings.get(key, APP_DEFAULTS.get(key, []))
+            editor = HotkeyEdit(value)
+            self._hotkey_editors[key] = editor
+            hotkey_form.addRow(label, editor)
+
+        form_host.addWidget(hotkey_box)
+
         # 应用行为
         app_box = QGroupBox("应用")
         app_form = QFormLayout(app_box)
@@ -125,6 +241,8 @@ class SettingsDialog(QDialog):
         github_row = QHBoxLayout()
         github_btn = QPushButton("打开 GitHub 仓库")
         github_btn.clicked.connect(self._open_github)
+        github_btn.setAutoDefault(False)
+        github_btn.setDefault(False)
         github_row.addWidget(github_btn)
         github_row.addStretch(1)
         app_form.addRow("项目地址", github_row)
@@ -172,6 +290,9 @@ class SettingsDialog(QDialog):
         buttons.addStretch(1)
         save_btn = QPushButton("保存")
         cancel_btn = QPushButton("取消")
+        save_btn.setDefault(True)
+        save_btn.setAutoDefault(True)
+        cancel_btn.setAutoDefault(False)
         save_btn.clicked.connect(self._on_save)
         cancel_btn.clicked.connect(self.reject)
         buttons.addWidget(save_btn)
@@ -271,6 +392,9 @@ class SettingsDialog(QDialog):
         self._app_settings["minimize_to_tray_on_close"] = (
             self.tray_combo.currentData()
         )
+
+        for key, editor in self._hotkey_editors.items():
+            self._app_settings[key] = editor.keys
 
         for key, editor in self._theme_editors.items():
             self._app_settings[key] = self._read_editor(key, "color", editor)

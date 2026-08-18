@@ -193,6 +193,19 @@ class MainWindow(QMainWindow):
         self.watcher.is_playing_changed.connect(self._on_playing)
         self.watcher.position_changed.connect(self._on_position)
 
+        self._apply_hotkeys()
+
+    def _apply_hotkeys(self):
+        """将设置中的热键应用到 CloudMusicController。"""
+        from core.cloudmusic_controller import CloudMusicController
+        app = self._settings["app"]
+        CloudMusicController.update_key_map({
+            "play_pause": app.get("hotkey_play_pause", ["ctrl", "alt", "p"]),
+            "next": app.get("hotkey_next", ["ctrl", "alt", "right"]),
+            "previous": app.get("hotkey_previous", ["ctrl", "alt", "left"]),
+            "volume_up": app.get("hotkey_volume_up", ["ctrl", "alt", "up"]),
+            "volume_down": app.get("hotkey_volume_down", ["ctrl", "alt", "down"]),
+        })
 
     def _build_ui(self):
         """构建主窗口界面控件与布局。"""
@@ -641,6 +654,8 @@ class MainWindow(QMainWindow):
 
             if getattr(self, "overlay", None) is not None:
                 self.overlay.reload_config()
+
+            self._apply_hotkeys()
 
     def _show_from_tray(self):
         self.showNormal()
