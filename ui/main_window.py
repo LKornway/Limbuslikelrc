@@ -47,6 +47,9 @@ from PySide6.QtWidgets import (
     QSizeGrip
 )
 
+from core.logger import get_logger
+logger = get_logger()
+
 from core.cloudmusic_watcher import CloudMusicWatcher
 from core.settings_store import load_settings, save_settings
 from ui.settings_dialog import SettingsDialog
@@ -464,14 +467,35 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         act_show = QAction("打开主界面", self)
         act_show.triggered.connect(self._show_from_tray)
+        act_export_log = QAction("导出日志到桌面", self)
+        act_export_log.triggered.connect(self._on_export_log)
         act_quit = QAction("退出应用", self)
         act_quit.triggered.connect(self._quit_app)
         menu.addAction(act_show)
+        menu.addAction(act_export_log)
         menu.addSeparator()
         menu.addAction(act_quit)
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self._on_tray_activated)
         self.tray.show()
+
+    def _on_export_log(self):
+        from core.logger import export_log_to_desktop
+        dest = export_log_to_desktop()
+        if dest:
+            self.tray.showMessage(
+                "导出成功",
+                f"日志已保存至桌面：\n{os.path.basename(dest)}",
+                QSystemTrayIcon.Information,
+                3000,
+            )
+        else:
+            self.tray.showMessage(
+                "导出失败",
+                "当前暂无日志文件或导出出错",
+                QSystemTrayIcon.Warning,
+                3000,
+            )
 
     def _on_track(self, song: str, artist: str, track_id_str: str):
         """
@@ -483,7 +507,7 @@ class MainWindow(QMainWindow):
             track_id_str: 歌曲 ID 字符串。
         """
 
-        print(f"[主界面] 收到歌曲变化：{song} - {artist}")
+        logger.info(f"收到歌曲变化：{song} - {artist}")
         self._song = song
         self._artist = artist
         self._duration = 0.0
@@ -492,7 +516,7 @@ class MainWindow(QMainWindow):
         self.artist_label.setText(artist or "—")
         self.cover_label.setText("加载中…")
         self.cover_label.setPixmap(QPixmap())
-        print("[主界面] 开始获取歌曲时长和专辑封面")
+        logger.info("开始获取歌曲时长和专辑封面")
         self._fetch_meta_async(song, artist, track_id_str, self._song_key)
         self.status_label.setText("正在获取歌词…")
 
@@ -543,7 +567,7 @@ class MainWindow(QMainWindow):
             song_key: 用于校验结果的唯一键。
         """
 
-        print(f"[主界面] 开始获取歌曲时长和专辑封面，track_id={track_id_str}")
+        logger.info(f"开始获取歌曲时长和专辑封面，track_id={track_id_str}")
 
         def worker():
             duration = 0.0
@@ -553,7 +577,7 @@ class MainWindow(QMainWindow):
                     # 使用歌曲详情 API
                     detail_url = "https://music.163.com/api/song/detail"
                     params = {"ids": f"[{track_id_str}]"}
-                    print(f"[封面] 请求详情: {detail_url}?ids=[{track_id_str}]")
+                    logger.info(f"请求详情: {detail_url}?ids=[{track_id_str}]")
                     resp = requests.get(
                         detail_url,
                         params=params,
@@ -576,14 +600,14 @@ class MainWindow(QMainWindow):
                             img = requests.get(pic + "?param=240y240", timeout=5)
                             if img.ok:
                                 raw = img.content
-                                print(f"[封面] 封面下载成功，大小 {len(raw)} 字节")
+                                logger.info(f"封面下载成功，大小 {len(raw)} 字节")
                             else:
-                                print(f"[封面] 封面下载失败，状态码 {img.status_code}")
+                                logger.error(f"封面下载失败，状态码 {img.status_code}")
                     else:
-                        print("[封面] API 返回无歌曲")
+                        logger.info(f"API 返回无歌曲")
                 else:
                     # 回退：使用搜索 API（兼容旧逻辑）
-                    print("[封面] 没有有效 track_id，回退到搜索")
+                    logger.info(f"没有有效 track_id，回退到搜索")
                     keyword = f"{song} {artist}".strip()
                     resp = requests.get(
                         "https://music.163.com/api/search/get",
@@ -607,9 +631,9 @@ class MainWindow(QMainWindow):
                             if img.ok:
                                 raw = img.content
                     else:
-                        print("[封面] 搜索未找到歌曲")
+                        logger.info(f"搜索未找到歌曲")
             except Exception as e:
-                print(f"[封面] 请求异常: {e}")
+                logger.error(f"请求异常: {e}")
             # 发送结果
             self._cover_bridge.arrived.emit(raw, song_key)
             self._cover_bridge.duration_arrived.emit(duration, song_key)

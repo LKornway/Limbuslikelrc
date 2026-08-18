@@ -11,6 +11,8 @@ import threading
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from cloudmusic_detector import CloudMusic
+from core.logger import get_logger
+logger = get_logger()
 
 
 class CloudMusicWatcher(QObject):
@@ -76,12 +78,12 @@ class CloudMusicWatcher(QObject):
                 self._cm.start()
                 self._started = True
 
-                print("[网易云] 本地播放状态监听已启动")
+                logger.info(f"本地播放状态监听已启动")
 
             except FileNotFoundError as exc:
-                print(f"[网易云] 未找到 cloudmusic.elog：{exc}")
+                logger.error(f"未找到 cloudmusic.elog：{exc}")
             except Exception as exc:
-                print(f"[网易云] 监听启动失败：{exc}")
+                logger.error(f"监听启动失败：{exc}")
 
         threading.Thread(target=runner, daemon=True).start()
 
@@ -123,9 +125,7 @@ class CloudMusicWatcher(QObject):
 
         except Exception as exc:
 
-            print(
-                f"[网易云] 读取播放状态失败：{exc}"
-            )
+            logger.error(f"读取播放状态失败：{exc}")
 
             return
 
@@ -158,9 +158,7 @@ class CloudMusicWatcher(QObject):
         ):
             self._last_track_key = track_key
 
-            print(
-                f"[网易云] 当前歌曲：{song} - {artist}"
-            )
+            logger.info(f"当前歌曲：{song} - {artist}")
 
             self.track_changed.emit(
                 song,

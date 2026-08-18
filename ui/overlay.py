@@ -23,6 +23,8 @@ import config
 from core.models import CharacterState, LyricObject
 from core.netease_source import NeteaseSource
 from core.cloudmusic_watcher import CloudMusicWatcher
+from core.logger import get_logger
+logger = get_logger()
 
 
 class LyricsOverlay(QWidget):
@@ -178,9 +180,9 @@ class LyricsOverlay(QWidget):
         self.is_paused = not is_playing
 
         if self.is_paused:
-            print("[网易云] 暂停，时间轴冻结，抖动保持")
+            logger.info(f"暂停，时间轴冻结，抖动保持")
         else:
-            print("[网易云] 播放，恢复时间轴推进")
+            logger.info(f"播放，恢复时间轴推进")
 
     def apply_playback_position(self, position):
         """
@@ -571,8 +573,8 @@ class LyricsOverlay(QWidget):
             lyric
         )
 
-        print(
-            f"[歌词] {text}"
+        logger.info(
+            f"{text}"
             f" | angle={angle}°"
             f" | ({x:.0f}, {y:.0f})"
         )

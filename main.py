@@ -7,8 +7,11 @@
 import sys
 
 from PySide6.QtWidgets import QApplication
-from core.cloudmusic_watcher import CloudMusicWatcher
 
+from core.logger import setup_logging
+setup_logging()
+
+from core.cloudmusic_watcher import CloudMusicWatcher
 from core.settings_store import load_settings
 from ui.main_window import MainWindow
 from ui.overlay import LyricsOverlay

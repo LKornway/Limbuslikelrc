@@ -12,6 +12,8 @@ from pathlib import Path
 from PySide6.QtGui import QColor
 
 import config
+from core.logger import get_logger
+logger = get_logger()
 
 
 APP_DEFAULTS = {
@@ -166,15 +168,15 @@ def load_settings() -> dict:
     }
 
     if not path.is_file():
-        print("[设置] 首次启动，使用默认配置")
+        logger.info(f"首次启动，使用默认配置")
         return result
 
     try:
         with path.open("r", encoding="utf-8") as fp:
             saved = json.load(fp)
-        print("[设置] 成功读取配置文件")
+        logger.info(f"成功读取配置文件")
     except (OSError, json.JSONDecodeError) as e:
-        print(f"[设置] 读取失败：{e}，使用默认配置")
+        logger.error(f"读取失败：{e}，使用默认配置")
         return result
 
     # 合并 app 设置
@@ -225,6 +227,6 @@ def save_settings(app: dict, config_data: dict | None = None) -> None:
     try:
         with path.open("w", encoding="utf-8") as fp:
             json.dump(payload, fp, ensure_ascii=False, indent=2)
-        print(f"[设置] 保存成功，颜色值：TEXT_COLOR={config_data.get('TEXT_COLOR')}, STROKE_COLOR={config_data.get('STROKE_COLOR')}")
+        logger.info(f"保存成功，颜色值：TEXT_COLOR={config_data.get('TEXT_COLOR')}, STROKE_COLOR={config_data.get('STROKE_COLOR')}")
     except Exception as e:
-        print(f"[设置] 保存失败：{e}")
+        logger.error(f"保存失败：{e}")
