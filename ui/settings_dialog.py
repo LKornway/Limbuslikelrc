@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QUrl, QTimer
-from PySide6.QtGui import QColor, QDesktopServices
+from PySide6.QtGui import QColor, QDesktopServices, QFont
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QStyle,
+    QFontComboBox
 )
 
 from core.settings_store import (
@@ -347,6 +348,11 @@ class SettingsDialog(QDialog):
             box.setValue(float(value))
             return box
 
+        if key == "FONT_FAMILY":
+            combo = QFontComboBox()
+            combo.setCurrentFont(QFont(value))
+            return combo
+
         line = QLineEdit(str(value))
         return line
 
@@ -378,6 +384,8 @@ class SettingsDialog(QDialog):
             return editor.value()
         if kind is float:
             return editor.value()
+        if key == "FONT_FAMILY" and isinstance(editor, QFontComboBox):
+            return editor.currentFont().family()
         return editor.text().strip()
 
     def _on_save(self):

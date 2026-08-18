@@ -17,6 +17,8 @@ from PySide6.QtCore import QObject, Signal
 
 import config
 from core.lrc_parser import parse_lrc_text
+from core.logger import get_logger
+logger = get_logger()
 
 
 class NetEaseBridge(QObject):
@@ -62,7 +64,6 @@ class NetEaseMusic:
         keyword = f"{song} {artist}".strip()
 
         try:
-            # 搜索歌曲
             search_url = "https://music.163.com/api/search/get"
 
             response = requests.get(
@@ -87,10 +88,7 @@ class NetEaseMusic:
             )
 
             if not songs:
-
-                print(
-                    f"[网易云] 搜索不到：{keyword}"
-                )
+                logger.error(f"搜索不到：{keyword}")
 
                 return None
 
@@ -98,12 +96,8 @@ class NetEaseMusic:
 
             if not song_id:
                 return None
+            logger.info(f"song_id={song_id}")
 
-            print(
-                f"[网易云] song_id={song_id}"
-            )
-
-            # 获取歌词
             lyric_url = "https://music.163.com/api/song/lyric"
 
             lyric_response = requests.get(
@@ -130,9 +124,7 @@ class NetEaseMusic:
 
             if not lrc or "[" not in lrc:
 
-                print(
-                    f"[网易云] 「{song}」没有可用 LRC"
-                )
+                logger.info(f"「{song}」没有可用 LRC")
 
                 return None
 
@@ -140,15 +132,11 @@ class NetEaseMusic:
 
         except requests.RequestException as exc:
 
-            print(
-                f"[网易云] 网络请求失败：{exc}"
-            )
+            logger.error(f"网络请求失败：{exc}")
 
         except Exception as exc:
 
-            print(
-                f"[网易云] 获取歌词失败：{exc}"
-            )
+            logger.error(f"获取歌词失败：{exc}")
 
         return None
 
@@ -176,10 +164,10 @@ class NetEaseMusic:
             if lrc and "[" in lrc:
                 return lrc
             else:
-                print(f"[网易云] ID {track_id} 没有可用 LRC")
+                logger.info(f"ID {track_id} 没有可用 LRC")
                 return None
         except Exception as e:
-            print(f"[网易云] 通过 ID 获取歌词失败: {e}")
+            logger.error(f"通过 ID 获取歌词失败: {e}")
             return None
 
 
@@ -280,9 +268,7 @@ class NeteaseSource(QObject):
         # 避免新歌词获取期间屏幕继续显示上一首字幕。
         self.lyrics_cleared.emit()
 
-        print(
-            f"[网易云] 检测到新歌曲：{song} - {artist}"
-        )
+        logger.error(f"检测到新歌曲：{song} - {artist}")
 
         # 记录识别到新歌时的真实播放进度。
         if self._position_provider is not None:
@@ -351,23 +337,22 @@ class NeteaseSource(QObject):
         )
 
         if result_song_key != self.current_song_key:
-
-            print(
-                f"[网易云] 歌词返回时歌曲已变化，丢弃："
+            logger.info(
+                f"歌词返回时歌曲已变化，丢弃："
                 f"{song} - {artist}"
             )
 
             return
 
         if status != "ok":
-            print(f"[网易云] 获取歌词失败：{song} - {artist}")
+            logger.info(f"获取歌词失败：{song} - {artist}")
             self.lyrics_failed.emit(song, artist or "")
             return
 
         lyrics = parse_lrc_text(lrc_text)
 
         if not lyrics:
-            print(f"[网易云] LRC 解析失败：{song} - {artist}")
+            logger.info(f"LRC 解析失败：{song} - {artist}")
             self.lyrics_failed.emit(song, artist or "")
             return
 
@@ -394,12 +379,10 @@ class NeteaseSource(QObject):
                 + config.LYRIC_MANUAL_OFFSET
         )
 
-        print(
-            f"[网易云] 已获取歌词：{song} - {artist}"
-        )
+        logger.info(f"已获取歌词：{song} - {artist}")
 
-        print(
-            f"[网易云] 共 {len(lyrics)} 句"
+        logger.info(
+            f"共 {len(lyrics)} 句"
             f" | 起始进度 {start_offset:.2f}s"
         )
 
