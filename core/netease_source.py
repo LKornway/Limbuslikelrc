@@ -268,7 +268,7 @@ class NeteaseSource(QObject):
         # 避免新歌词获取期间屏幕继续显示上一首字幕。
         self.lyrics_cleared.emit()
 
-        logger.error(f"检测到新歌曲：{song} - {artist}")
+        logger.info(f"检测到新歌曲：{song} - {artist}")
 
         # 记录识别到新歌时的真实播放进度。
         if self._position_provider is not None:
