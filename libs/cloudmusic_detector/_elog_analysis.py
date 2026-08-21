@@ -94,6 +94,7 @@ def _get_system_uptime_ms() -> int:
 
 
 def parse_header(row: str) -> Optional[_ElogHeader]:
+    row = row.lstrip()  # 去除前导空格或不可见字符
     m = _HEADER_RE.match(row)
     if not m:
         return None

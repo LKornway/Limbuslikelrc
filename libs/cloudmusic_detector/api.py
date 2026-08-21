@@ -248,7 +248,19 @@ class CloudMusic:
                         song_track = self._make_track(detail)
                         song_id = song_track.id
                         song_play_time = header.timestamp
-                break
+                    else:
+                        # Store 版网易云没有 webdb.dat，查询会失败。
+                        # 回退：从已记录的 records 中查找 playOneTrackInPlayingList 事件
+                        for rec in records:
+                            if 'playOneTrackInPlayingList' in rec:
+                                etype2 = get_event_type(rec, ELOG_RULES)
+                                if etype2 == "PLAY_ONE_TRACKIN_PLAYING_LIST":
+                                    data2 = parse_args(etype2, rec)
+                                    if data2 and isinstance(data2, dict):
+                                        song_track = self._make_track(data2)
+                                        song_id = song_track.id
+                                        song_play_time = header.timestamp
+                                        break
 
         # 正序回放进度和状态
         records.reverse()

@@ -6,13 +6,14 @@
 
 ## 界面预览
 
-![歌词效果](assets/effect.png)
-![程序主页面](assets/Interface_effect.png)
-![设置页面](assets/Setting_effect.png)
+<img src="assets/effect.png" alt="歌词效果" width="400">
+<img src="assets/Interface_effect.png" alt="程序主页面" width="400">
+<img src="assets/Setting_effect.png" alt="设置页面" width="150">
 
 ## 功能
 
 - 通过网易云本地日志（`cloudmusic.elog`）识别当前歌曲、歌手（无需额外插件）
+- **同时支持桌面版和 Microsoft Store 版网易云音乐**
 - 实时监听播放/暂停状态，同步真实播放进度（支持中途启动、拖动进度条）
 - 自动获取并解析 LRC 歌词，过滤「作词/作曲」等非歌词元信息
 - 全屏歌词逐字出现、抖动、描边、随机倾斜动画
@@ -26,7 +27,7 @@
 ## 系统要求
 
 - **仅支持 Windows**
-- 已安装并运行 [网易云音乐](https://music.163.com/) 桌面客户端（建议 3.x 及以上）
+- 已安装并运行 [网易云音乐](https://music.163.com/) 桌面客户端或 Microsoft Store 版（建议 3.x 及以上）
 - Python 3.9+
 - 客户端至少运行过一次，以生成本地 `%LOCALAPPDATA%\NetEase\CloudMusic\cloudmusic.elog`
 
@@ -65,6 +66,8 @@ Limbuslikelrc/
 ├── Limbuslikelrc.spec      # 打包配置（可选）
 ├── assets/                 # 图标与预览图
 │   └── app.ico             # 应用图标（含多尺寸）
+├── libs/                   # 本地第三方库
+│   └── cloudmusic_detector/   # 修改版网易云状态监听库（支持桌面版和 Store 版）
 ├── core/                   # 核心功能模块
 │   ├── __init__.py
 │   ├── cloudmusic_watcher.py   # 本地 elog 监听（歌曲/播放暂停/进度）
@@ -83,7 +86,7 @@ Limbuslikelrc/
 
 ## 工作原理（简要）
 
-1. core/cloudmusic_watcher.py 通过 netease-cloudmusic-detector 读取网易云本地日志，获取当前歌曲、播放状态与进度。
+1. core/cloudmusic_watcher.py 通过修改后的 cloudmusic_detector 库读取网易云本地日志，获取当前歌曲、播放状态与进度，同时兼容桌面版和 Store 版。
 2. core/netease_source.py 在切歌后请求 LRC，并由 core/lrc_parser.py 解析。
 3. ui/overlay.py 按时间轴渲染逐字动画；拖动进度条时仅恢复当前仍应可见的歌词，避免历史句子一次铺满。
 4. core/cloudmusic_controller.py 通过模拟全局快捷键控制网易云音乐播放，支持自定义热键。
@@ -92,7 +95,7 @@ Limbuslikelrc/
 ## 已知限制
 
 - 目前仅支持 Windows 系统。
-- 仅支持网易云音乐桌面客户端。
+- 仅支持网易云音乐桌面客户端或 Microsoft Store 版。
 - 播放状态依赖本地 cloudmusic.elog，若文件缺失或客户端版本差异较大可能无法正确识别。
 - 歌词内容依赖网易云网络接口，需要网络连接。
 
