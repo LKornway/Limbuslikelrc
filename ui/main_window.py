@@ -654,9 +654,30 @@ class MainWindow(QMainWindow):
             self.cover_label.width(),
             self.cover_label.height(),
             Qt.KeepAspectRatioByExpanding,
-            Qt.SmoothTransformation,
+            Qt.SmoothTransformation
         )
         self.cover_label.setPixmap(pix)
+
+        # 自动主题色
+        if self._settings["app"].get("auto_theme", True):
+            try:
+                from PIL import Image as PILImage
+                from io import BytesIO
+                from core.color_analyzer import analyze_colors
+                from PySide6.QtGui import QColor
+
+                pil_image = PILImage.open(BytesIO(raw))
+                dominant, contrast = analyze_colors(pil_image)
+
+                import config
+                config.TEXT_COLOR = QColor(*contrast)
+                config.STROKE_COLOR = QColor(*dominant)
+
+                if getattr(self, "overlay", None) is not None:
+                    self.overlay.reload_config()
+            except Exception as e:
+                logger.warning(f"自动主题色分析失败: {e}")
+
         self._update_progress_ui()
 
     def _on_duration(self, duration: float, song_key: str):

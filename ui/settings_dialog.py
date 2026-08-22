@@ -269,6 +269,10 @@ class SettingsDialog(QDialog):
         form_host.addWidget(theme_box)
 
         # 视觉 / 动画参数
+        self.auto_theme_checkbox = QCheckBox()
+        self.auto_theme_checkbox.setChecked(self._app_settings.get("auto_theme", True))
+        theme_form.addRow("自动主题色（从封面提取）", self.auto_theme_checkbox)
+
         visual_box = QGroupBox("歌词显示")
         visual_form = QFormLayout(visual_box)
 
@@ -406,6 +410,8 @@ class SettingsDialog(QDialog):
 
         for key, editor in self._theme_editors.items():
             self._app_settings[key] = self._read_editor(key, "color", editor)
+
+        self._app_settings["auto_theme"] = self.auto_theme_checkbox.isChecked()
 
         apply_config_snapshot(config_data)
         save_settings(self._app_settings, config_data)

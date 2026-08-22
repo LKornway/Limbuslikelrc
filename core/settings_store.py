@@ -29,6 +29,7 @@ APP_DEFAULTS = {
     "hotkey_previous": ["ctrl", "alt", "left"],
     "hotkey_volume_up": ["ctrl", "alt", "up"],
     "hotkey_volume_down": ["ctrl", "alt", "down"],
+    "auto_theme": True,
 }
 
 GITHUB_URL = "https://github.com/LKornway/Limbuslikelrc"
