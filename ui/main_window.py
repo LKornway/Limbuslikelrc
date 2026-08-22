@@ -14,21 +14,17 @@ import requests
 from PySide6.QtCore import (
     Qt,
     QPoint,
-    QRect,
-    QSize,
     Signal,
     QTimer,
     QObject,
 )
 from PySide6.QtGui import (
     QAction,
-    QColor,
     QFont,
     QIcon,
     QImage,
     QFontMetrics,
     QPainter,
-    QPainterPath,
     QPixmap,
 )
 from PySide6.QtWidgets import (
@@ -332,11 +328,11 @@ class MainWindow(QMainWindow):
             is_visible = self.overlay.isVisible()
             if is_visible:
                 self.overlay.hide()
-                self.overlay.stop_timer()  # 停止帧定时器
+                self.overlay.stop_timer()
                 self.toggle_lyrics_btn.setText("显示歌词")
             else:
                 self.overlay.show()
-                self.overlay.start_timer()  # 恢复帧定时器
+                self.overlay.start_timer()
                 self.toggle_lyrics_btn.setText("隐藏歌词")
 
 
@@ -611,7 +607,6 @@ class MainWindow(QMainWindow):
                     songs = data.get("songs", [])
                     if songs:
                         item = songs[0]
-                        # 关键：duration 字段（毫秒）
                         duration = float(item.get("duration") or 0) / 1000.0
                         album = item.get("album") or {}
                         pic = album.get("picUrl") or ""
@@ -625,7 +620,7 @@ class MainWindow(QMainWindow):
                     else:
                         logger.info(f"API 返回无歌曲")
                 else:
-                    # 回退：使用搜索 API（兼容旧逻辑）
+                    # 回退：使用搜索 API
                     logger.info(f"没有有效 track_id，回退到搜索")
                     keyword = f"{song} {artist}".strip()
                     resp = requests.get(
@@ -745,8 +740,6 @@ class MainWindow(QMainWindow):
         """播放/暂停按钮点击"""
         from core.cloudmusic_controller import CloudMusicController
         CloudMusicController.play_pause()
-        # 图标可切换：当前是 ▶ 和 ⏸，但为了简单，可保持图标不变，因为状态可能不同步
-        # 或者根据实际播放状态更新图标，但需要额外的状态查询，暂不实现
 
     def _on_next_clicked(self):
         """下一首按钮点击"""
@@ -900,7 +893,6 @@ class MainWindow(QMainWindow):
         else:
             new_height = height
 
-        # 角落拖动时取主方向；单边拖动时根据该边反推出另一边。
         if len(edge) > 5:
             if abs(dx) >= abs(dy):
                 new_height = new_width / ratio

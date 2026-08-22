@@ -39,7 +39,7 @@ class CloudMusicWatcher(QObject):
         if os.path.exists(path):
             return path
 
-        # Store 版（两种常见路径）
+        # Store 版
         import glob
         patterns = [
             os.path.join(local, "Packages", "*", "LocalCache", "Local", "NetEase", "CloudMusic", "cloudmusic.elog"),

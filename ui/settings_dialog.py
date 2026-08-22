@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import shutil
 from PySide6.QtCore import Qt, QUrl, QTimer
 from PySide6.QtGui import QColor, QDesktopServices, QFont
 from PySide6.QtWidgets import (
@@ -97,7 +96,7 @@ class HotkeyEdit(QLineEdit):
 
     def _update_display(self):
         """正常显示当前保存的热键"""
-        self.setStyleSheet("")  # 清除可能存在的红色警告样式
+        self.setStyleSheet("")
         if not self.keys:
             self.setText("未设置")
         else:
@@ -105,7 +104,7 @@ class HotkeyEdit(QLineEdit):
 
     def mousePressEvent(self, event):
         self.setText("请按下新的快捷键... (Esc取消)")
-        self._warning_timer.stop()  # 停止可能正在倒计时的警告
+        self._warning_timer.stop()
         self._recording = True
         super().mousePressEvent(event)
 
@@ -114,13 +113,11 @@ class HotkeyEdit(QLineEdit):
             return super().keyPressEvent(event)
 
         key = event.key()
-        # Esc 或 Backspace 取消录入
         if key in (Qt.Key_Escape, Qt.Key_Backspace):
             self._recording = False
             self._update_display()
             return
 
-        # 忽略单独的修饰键，等待组合键
         if key in (Qt.Key_Control, Qt.Key_Alt, Qt.Key_Shift, Qt.Key_Meta):
             return
 
@@ -131,7 +128,6 @@ class HotkeyEdit(QLineEdit):
         if mods & Qt.ShiftModifier: keys.append("shift")
         if mods & Qt.MetaModifier: keys.append("super")
 
-        # 核心校验：必须包含至少一个修饰键
         if not keys:
             self._recording = False
             self.setText("⚠ 必须包含 Ctrl/Alt/Shift 等修饰键")
@@ -139,8 +135,6 @@ class HotkeyEdit(QLineEdit):
             self._warning_timer.start(1500)
             return
 
-
-        # Qt按键码转 pyautogui 按键名
         special_map = {
             Qt.Key_Left: "left", Qt.Key_Right: "right", Qt.Key_Up: "up", Qt.Key_Down: "down",
             Qt.Key_Space: "space", Qt.Key_Return: "enter", Qt.Key_Enter: "enter",
@@ -479,7 +473,7 @@ class SettingsDialog(QDialog):
             except Exception:
                 pass
 
-        # 如果目录为空，删除目录（可选）
+        # 如果目录为空，删除目录
         if not any(cache_dir.iterdir()):
             try:
                 cache_dir.rmdir()

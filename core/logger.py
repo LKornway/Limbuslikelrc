@@ -7,15 +7,12 @@
 
 import logging
 import os
-import shutil
+
 from pathlib import Path
 from datetime import datetime
 
-# --- 新增：引入轮转文件控制器 ---
 from logging.handlers import RotatingFileHandler
-# ---------------------------------
 
-# 日志存放目录（与 settings.json 同级）
 LOG_DIR = Path(os.environ.get("APPDATA") or str(Path.home())) / "Limbuslikelrc"
 LOG_FILE = LOG_DIR / "app.log"
 
@@ -27,7 +24,6 @@ def setup_logging():
     logger = logging.getLogger("Limbuslikelrc")
     logger.setLevel(logging.DEBUG)
 
-    # --- 修改：使用 RotatingFileHandler 替代 FileHandler ---
     # maxBytes: 单个日志文件最大 5MB (5 * 1024 * 1024)
     # backupCount: 最多保留 3 个历史日志文件 (app.log.1, app.log.2, app.log.3)
     # encoding: utf-8 防止中文乱码
@@ -37,7 +33,6 @@ def setup_logging():
         backupCount=3,
         encoding="utf-8"
     )
-    # -------------------------------------------------------
 
     file_handler.setLevel(logging.DEBUG)
     file_formatter = logging.Formatter(
@@ -87,7 +82,7 @@ def export_log_to_desktop() -> str:
     try:
         # 找出所有相关的日志文件（包括 .1, .2 等备份）
         log_files = [LOG_FILE]
-        for i in range(1, 4):  # 因为 backupCount 是 3，所以最多找 .1, .2, .3
+        for i in range(1, 4):
             backup_file = LOG_DIR / f"app.log.{i}"
             if backup_file.exists():
                 log_files.append(backup_file)

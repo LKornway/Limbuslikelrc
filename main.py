@@ -69,7 +69,7 @@ def check_updates(main_window):
 
 def on_check_finished(success, msg, main_window):
     if success and "发现新版本" in msg:
-        # 弹窗询问
+
         reply = QMessageBox.question(
             main_window,
             "发现新版本",
@@ -80,7 +80,7 @@ def on_check_finished(success, msg, main_window):
             download_and_install(main_window)
 
 def download_and_install(main_window):
-    # 获取最新 release 的 exe 下载 URL
+
     try:
         resp = requests.get(GITHUB_API_URL, timeout=5)
         resp.raise_for_status()
@@ -95,23 +95,31 @@ def download_and_install(main_window):
         QMessageBox.warning(main_window, "错误", f"获取下载链接失败: {e}")
         return
 
-    # 下载进度对话框
     progress = QProgressDialog("正在下载更新...", "取消", 0, 100, main_window)
     progress.setWindowTitle("下载更新")
     progress.setMinimumDuration(0)
     progress.setValue(0)
 
-    # 临时文件路径
     import tempfile
     temp_dir = tempfile.gettempdir()
     new_exe = Path(temp_dir) / "Limbuslikelrc_new.exe"
 
     main_window._downloader = Downloader()
-    main_window._downloader.progress.connect(...)
+
+    def on_progress(cur, total):
+        if total == 0:
+            progress.setRange(0, 0)
+            progress.setLabelText(f"已下载 {cur // 1024} KB")
+        else:
+            progress.setRange(0, 100)
+            progress.setValue(int(cur / total * 100))
+            progress.setLabelText(f"下载中 {cur // 1024} / {total // 1024} KB")
+
+    main_window._downloader.progress.connect(on_progress)
     main_window._downloader.finished.connect(
         lambda ok, msg: on_download_finished(ok, msg, progress, new_exe, main_window)
     )
-    progress.canceled.connect(main_window._downloader.cancel)  # 改为调用 cancel()
+    progress.canceled.connect(main_window._downloader.cancel)
 
     main_window._downloader.start_download(url, str(new_exe))
 
@@ -122,8 +130,8 @@ def on_download_finished(ok, msg, progress, new_exe, main_window):
         QMessageBox.warning(main_window, "下载失败", msg)
         return
 
-    install_update(new_exe)
-    QMessageBox.information(main_window, "更新完成", "更新已安装，程序将自动重启。")
+    if install_update(new_exe):
+        return
 
 if __name__ == "__main__":
     main()

@@ -6,15 +6,13 @@
 
 import os
 import sys
-import json
 import subprocess
-import tempfile
-from typing import Optional, Tuple
+import time
 from pathlib import Path
 
 import requests
-from PySide6.QtCore import QObject, Signal, QThread, QTimer
-from PySide6.QtWidgets import QProgressDialog, QMessageBox, QApplication
+from PySide6.QtCore import QObject, Signal, QThread
+
 
 from config import APP_VERSION
 from core.logger import get_logger
@@ -58,9 +56,9 @@ class UpdateThread(QThread):
             resp.raise_for_status()
             data = resp.json()
             latest_tag = data.get("tag_name", "").lstrip("v")
-            # 比较版本
+
             if latest_tag and self._version_greater(latest_tag, APP_VERSION):
-                # 找到 exe 资产
+
                 assets = data.get("assets", [])
                 exe_asset = None
                 for asset in assets:
@@ -122,7 +120,6 @@ class DownloadThread(QThread):
 
     def run(self):
         try:
-            # 流式下载
             resp = requests.get(self.url, stream=True, timeout=10)
             resp.raise_for_status()
             total_size = int(resp.headers.get('content-length', 0))
@@ -133,8 +130,7 @@ class DownloadThread(QThread):
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
-                        if total_size:
-                            self.progress.emit(downloaded, total_size)
+                        self.progress.emit(downloaded, total_size)
             self.finished.emit(True, "下载完成")
         except Exception as e:
             logger.error(f"下载失败: {e}")
@@ -150,39 +146,71 @@ def get_exe_path() -> Path:
 
 
 def install_update(new_exe_path: Path):
-    """
-    安装更新：创建批处理脚本，替换当前 exe 并重启。
-    适用于 Windows 打包后的 .exe。
-    """
     current_exe = get_exe_path()
-    if not current_exe.suffix.lower() == '.exe':
-        # 开发环境，仅提示
-        return
+    if current_exe.suffix.lower() != ".exe":
+        return False
 
-    # 创建临时批处理文件
-    bat_content = f"""@echo off
-chcp 65001 >nul
-timeout /t 2 /nobreak >nul
-:retry
-tasklist /FI "IMAGENAME eq {current_exe.name}" 2>NUL | find /I /N "{current_exe.name}" >NUL
-if "%ERRORLEVEL%"=="0" (
-    timeout /t 1 /nobreak >nul
-    goto retry
-)
-move /Y "{new_exe_path}" "{current_exe}"
-start "" "{current_exe}"
-del "%~f0"
-"""
-    bat_path = current_exe.parent / "update.bat"
-    with open(bat_path, 'w', encoding='utf-8') as f:
-        f.write(bat_content)
+    current_pid = os.getpid()
 
-    # 启动批处理（隐藏窗口）
-    subprocess.Popen(
-        [str(bat_path)],
-        creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    # 退出当前程序
-    QApplication.quit()
+    temp_dir = Path(os.environ.get('TEMP', 'C:\\Temp'))
+    ps_path = temp_dir / "limbus_update.ps1"
+    log_path = temp_dir / "limbuslikelrc_update.log"
+
+    ps_content = f'''$ErrorActionPreference = "Stop"
+     $currentExe = "{current_exe}"
+     $newExe = "{new_exe_path}"
+     $currentPid = {current_pid}
+     $logPath = "{log_path}"
+
+    function Write-UpdateLog($message) {{
+        Add-Content -Path $logPath -Value "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $message"
+    }}
+
+    try {{
+        Write-UpdateLog "=== Updater started ==="
+        Write-UpdateLog "Current EXE: $currentExe"
+        Write-UpdateLog "New EXE: $newExe"
+
+        if (-not (Test-Path $newExe)) {{
+            throw "New EXE does not exist at $newExe"
+        }}
+
+        Write-UpdateLog "Waiting for PID $currentPid to exit..."
+        while (Get-Process -Id $currentPid -ErrorAction SilentlyContinue) {{
+            Start-Sleep -Milliseconds 500
+        }}
+        Write-UpdateLog "Main process exited."
+        Start-Sleep -Seconds 2
+
+        Write-UpdateLog "Starting EXE replacement..."
+        Move-Item -Path $newExe -Destination $currentExe -Force
+        Write-UpdateLog "EXE replacement succeeded."
+
+        Write-UpdateLog "Update finished. Cleaning up..."
+        Start-Sleep -Seconds 1
+        # 替换成功后，自动删除这个 PS1 脚本，不留垃圾
+        Remove-Item -Path $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
+    }}
+    catch {{
+        Write-UpdateLog "!!! UPDATE FAILED: $($_.Exception.Message)"
+    }}
+    '''
+
+    try:
+        ps_path.write_text(ps_content, encoding="utf-8-sig")
+
+        cmd_str = f'powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "{ps_path}"'
+
+        subprocess.Popen(
+            cmd_str,
+            shell=True,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+
+        time.sleep(1.0)
+
+    except Exception as e:
+        logger.error(f"启动更新脚本失败: {e}")
+        return False
+
+    os._exit(0)

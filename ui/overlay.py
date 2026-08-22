@@ -269,7 +269,6 @@ class LyricsOverlay(QWidget):
         配置歌词悬浮窗的窗口属性。
         """
 
-        # 保持原有窗口标志（无边框、置顶、Tool 窗口）
         self.setWindowFlags(
             Qt.FramelessWindowHint
             | Qt.WindowStaysOnTopHint
@@ -464,7 +463,6 @@ class LyricsOverlay(QWidget):
         )
 
         # 每句歌词创建时随机确定旋转角度，
-        # 后续绘制过程中保持不变。
         angle = self.random.randint(
             config.MIN_ANGLE,
             config.MAX_ANGLE
@@ -682,8 +680,7 @@ class LyricsOverlay(QWidget):
 
                 return lines
 
-        # 中文、日文等无空格文本：
-        # 在满足宽度限制的前提下，寻找左右宽度最接近的切分点。
+        # 中文、日文等无空格文本：在满足宽度限制的前提下，寻找左右宽度最接近的切分点。
         chars = list(text)
 
         best_split = (

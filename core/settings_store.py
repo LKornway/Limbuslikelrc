@@ -75,7 +75,7 @@ def _color_to_str(value) -> str:
 
     if isinstance(value, QColor) and value.isValid():
         return value.name(QColor.HexRgb)
-    return "#ffffff"  # 安全默认值
+    return "#ffffff"
 
 def _str_to_color(value) -> QColor:
     """
@@ -93,7 +93,7 @@ def _str_to_color(value) -> QColor:
     color = QColor(value)
     if color.isValid():
         return color
-    return QColor("#ffffff")   # 无效则返回白色
+    return QColor("#ffffff")
 
 def settings_path() -> Path:
     """
@@ -139,7 +139,7 @@ def apply_config_snapshot(data: dict) -> None:
         raw = data[key]
         try:
             if kind == "color":
-                # 确保颜色有效
+
                 color = _str_to_color(raw)
                 setattr(config, key, color)
             elif kind is bool:
@@ -151,7 +151,6 @@ def apply_config_snapshot(data: dict) -> None:
             else:
                 setattr(config, key, str(raw))
         except (TypeError, ValueError):
-            # 如果转换失败，保留原有值
             continue
 
 def load_settings() -> dict:
@@ -165,7 +164,7 @@ def load_settings() -> dict:
     path = settings_path()
     result = {
         "app": dict(APP_DEFAULTS),
-        "config": export_config_snapshot(),   # 默认值
+        "config": export_config_snapshot(),
     }
 
     if not path.is_file():
@@ -180,20 +179,19 @@ def load_settings() -> dict:
         logger.error(f"读取失败：{e}，使用默认配置")
         return result
 
-    # 合并 app 设置
+
     app = saved.get("app") or {}
     for key in APP_DEFAULTS:
         if key in app:
             result["app"][key] = app[key]
 
-    # 合并 config 设置
+
     cfg = saved.get("config") or {}
-    # 只保留有效的键
+
     for key in CONFIG_KEYS:
         if key in cfg:
             result["config"][key] = cfg[key]
         else:
-            # 如果缺失，保持默认
             pass
 
     # 将加载的配置应用到运行时 config
@@ -212,10 +210,10 @@ def save_settings(app: dict, config_data: dict | None = None) -> None:
     if config_data is None:
         config_data = export_config_snapshot()
 
-    # 保证所有颜色键都存在且有效
+
     for key in ["TEXT_COLOR", "STROKE_COLOR"]:
         if key not in config_data or not QColor(config_data[key]).isValid():
-            # 使用当前 config 中的值（如果有效）或默认白色
+
             current = getattr(config, key, QColor("#ffffff"))
             config_data[key] = _color_to_str(current)
 

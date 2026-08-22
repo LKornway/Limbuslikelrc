@@ -76,7 +76,6 @@ def parse_lrc_text(lrc_text):
         if not text:
             continue
 
-        # 跳过作词/作曲等非歌词文本
         if _is_meta_line(text):
             continue
 

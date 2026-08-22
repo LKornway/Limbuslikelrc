@@ -6,12 +6,11 @@
 """
 
 import colorsys
-import math
-from typing import Tuple, List, Optional
+
+from typing import Tuple, Optional
 from PIL import Image
 
 
-# ========== 色彩工具函数 ==========
 def rgb_to_hsv(r: int, g: int, b: int) -> Tuple[float, float, float]:
     """RGB 转 HSV (h:0-1, s:0-1, v:0-1)"""
     return colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
@@ -53,33 +52,27 @@ def adjust_color_for_contrast(base_r, base_g, base_b, target_r, target_g, target
     调整目标颜色的明度，使其与基础颜色的对比度达到最低要求。
     优先调整明度，若不行则微调饱和度。
     """
-    # 如果已经达到，直接返回
+
     if contrast_ratio(base_r, base_g, base_b, target_r, target_g, target_b) >= min_ratio:
         return target_r, target_g, target_b
 
-    # 转换为 HSV
     h, s, v = rgb_to_hsv(target_r, target_g, target_b)
 
-    # 尝试调整明度
     for v_candidate in [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]:
         r_c, g_c, b_c = hsv_to_rgb(h, s, v_candidate)
         if contrast_ratio(base_r, base_g, base_b, r_c, g_c, b_c) >= min_ratio:
             return r_c, g_c, b_c
 
-    # 如果调整明度失败，调整饱和度
     for s_candidate in [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]:
         r_c, g_c, b_c = hsv_to_rgb(h, s_candidate, 0.9)
         if contrast_ratio(base_r, base_g, base_b, r_c, g_c, b_c) >= min_ratio:
             return r_c, g_c, b_c
 
-    # 极端情况：返回黑白对比
     if luminance(base_r, base_g, base_b) > 0.5:
         return 0, 0, 0
     else:
         return 255, 255, 255
 
-
-# ========== 主提取函数 ==========
 def extract_dominant_colors(
     image: Image.Image,
     num_colors: int = 16,
@@ -93,17 +86,15 @@ def extract_dominant_colors(
     Returns:
         (主色RGB, 辅助色RGB 或 None)
     """
-    # 缩小以加速
+
     img = image.copy()
     img.thumbnail((100, 100))
     if img.mode != 'RGB':
         img = img.convert('RGB')
 
-    # 量化
     img_quantized = img.quantize(colors=num_colors)
     palette = img_quantized.getpalette()
 
-    # 提取颜色列表 (r,g,b,h,s,v)  —— 不再包含计数
     color_infos = []
     for i in range(num_colors):
         r = palette[i * 3]
@@ -120,7 +111,7 @@ def extract_dominant_colors(
     # 过滤中性色，得到候选
     candidates = []
     for idx, count in color_counts.items():
-        r, g, b, h, s, v = color_infos[idx]  # 现在解包6个值，没问题
+        r, g, b, h, s, v = color_infos[idx]
         if not is_neutral(r, g, b, saturation_threshold, value_threshold, value_high):
             candidates.append((idx, count))
 
