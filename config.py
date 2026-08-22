@@ -7,6 +7,8 @@
 
 from PySide6.QtGui import QColor
 
+APP_VERSION = "1.6.0"
+
 ## 歌词显示限制
 MAX_ACTIVE_LINES = 5
 SCREEN_MARGIN = 35

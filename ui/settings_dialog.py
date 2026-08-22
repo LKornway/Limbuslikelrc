@@ -65,6 +65,18 @@ CONFIG_LABELS = {
 }
 
 
+class NoWheelSpinBox(QSpinBox):
+    """禁用滚轮修改的 SpinBox，滚轮事件传递给父级"""
+    def wheelEvent(self, event):
+        event.ignore()
+
+
+class NoWheelDoubleSpinBox(QDoubleSpinBox):
+    """禁用滚轮修改的 DoubleSpinBox"""
+    def wheelEvent(self, event):
+        event.ignore()
+
+
 class HotkeyEdit(QLineEdit):
     """自定义热键录入框。点击后监听按键，转换为 pyautogui 格式。强制要求包含修饰键。"""
 
@@ -339,13 +351,13 @@ class SettingsDialog(QDialog):
             return box
 
         if kind is int:
-            box = QSpinBox()
+            box = NoWheelSpinBox()
             box.setRange(-99999, 99999)
             box.setValue(int(value))
             return box
 
         if kind is float:
-            box = QDoubleSpinBox()
+            box = NoWheelDoubleSpinBox()
             box.setDecimals(3)
             box.setRange(-99999.0, 99999.0)
             box.setSingleStep(0.1)
