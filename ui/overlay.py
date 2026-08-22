@@ -1249,3 +1249,13 @@ class LyricsOverlay(QWidget):
             return
 
         super().keyPressEvent(event)
+
+    def stop_timer(self):
+        """停止帧定时器（隐藏时释放资源）。"""
+        if self.frame_timer.isActive():
+            self.frame_timer.stop()
+
+    def start_timer(self):
+        """恢复帧定时器。"""
+        if not self.frame_timer.isActive():
+            self.frame_timer.start(config.FRAME_INTERVAL)

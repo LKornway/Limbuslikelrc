@@ -307,6 +307,12 @@ class MainWindow(QMainWindow):
 
         bottom = QHBoxLayout()
         bottom.addStretch(1)
+
+        self.toggle_lyrics_btn = QPushButton("隐藏歌词")
+        self.toggle_lyrics_btn.setObjectName("toggleLyricsBtn")
+        self.toggle_lyrics_btn.clicked.connect(self._toggle_lyrics)
+        bottom.addWidget(self.toggle_lyrics_btn)
+
         self.settings_btn = QPushButton("设置")
         self.settings_btn.setObjectName("settingsBtn")
         self.settings_btn.clicked.connect(self._open_settings)
@@ -319,6 +325,19 @@ class MainWindow(QMainWindow):
         self.apply_theme(self._settings["app"])
         self.setCentralWidget(self.chrome)
         self._update_scaled_ui()
+
+    def _toggle_lyrics(self):
+        """切换歌词悬浮窗的显示/隐藏。"""
+        if hasattr(self, "overlay") and self.overlay is not None:
+            is_visible = self.overlay.isVisible()
+            if is_visible:
+                self.overlay.hide()
+                self.overlay.stop_timer()  # 停止帧定时器
+                self.toggle_lyrics_btn.setText("显示歌词")
+            else:
+                self.overlay.show()
+                self.overlay.start_timer()  # 恢复帧定时器
+                self.toggle_lyrics_btn.setText("隐藏歌词")
 
 
     def _update_scaled_ui(self):
