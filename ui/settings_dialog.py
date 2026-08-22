@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import shutil
 from PySide6.QtCore import Qt, QUrl, QTimer
 from PySide6.QtGui import QColor, QDesktopServices, QFont
 from PySide6.QtWidgets import (
@@ -25,7 +26,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QStyle,
-    QFontComboBox
+    QFontComboBox, QMessageBox
 )
 
 from core.settings_store import (
@@ -259,6 +260,12 @@ class SettingsDialog(QDialog):
         github_row.addWidget(github_btn)
         github_row.addStretch(1)
         app_form.addRow("项目地址", github_row)
+
+        self.clear_cache_btn = QPushButton("清除歌词缓存")
+        self.clear_cache_btn.clicked.connect(self._clear_cache)
+        self.clear_cache_btn.setAutoDefault(False)
+        self.clear_cache_btn.setDefault(False)
+        app_form.addRow("歌词缓存", self.clear_cache_btn)
         form_host.addWidget(app_box)
 
         # 主界面外观
@@ -438,3 +445,49 @@ class SettingsDialog(QDialog):
         """在浏览器中打开项目 GitHub 页面。"""
 
         QDesktopServices.openUrl(QUrl(GITHUB_URL))
+
+    def _clear_cache(self):
+        """清除歌词缓存文件。"""
+        from core.settings_store import settings_path
+        cache_dir = settings_path().parent / "cache"
+        if not cache_dir.exists():
+            QMessageBox.information(self, "清除缓存", "缓存目录不存在，无需清除。")
+            return
+
+        # 统计缓存文件数量
+        cache_files = list(cache_dir.glob("*.lrc"))
+        if not cache_files:
+            QMessageBox.information(self, "清除缓存", "缓存目录为空，无需清除。")
+            return
+
+        # 确认删除
+        reply = QMessageBox.question(
+            self,
+            "清除缓存",
+            f"确定要删除 {len(cache_files)} 个歌词缓存文件吗？",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        # 删除文件
+        deleted = 0
+        for f in cache_files:
+            try:
+                f.unlink()
+                deleted += 1
+            except Exception:
+                pass
+
+        # 如果目录为空，删除目录（可选）
+        if not any(cache_dir.iterdir()):
+            try:
+                cache_dir.rmdir()
+            except Exception:
+                pass
+
+        QMessageBox.information(
+            self,
+            "清除缓存",
+            f"已成功删除 {deleted} 个缓存文件。"
+        )

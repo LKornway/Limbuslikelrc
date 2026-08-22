@@ -9,15 +9,17 @@
 """
 
 import threading
+from pathlib import Path
 
 import requests
 
 from PySide6.QtCore import QObject, Signal
 
-
 import config
 from core.lrc_parser import parse_lrc_text
 from core.logger import get_logger
+from core.settings_store import settings_path
+
 logger = get_logger()
 
 
@@ -187,7 +189,7 @@ class NeteaseSource(QObject):
     # 当前歌曲发生变化时，立即通知界面清除上一首歌词
     lyrics_cleared = Signal()
 
-    #歌词获取失败返回失败通知
+    # 歌词获取失败返回失败通知
     lyrics_failed = Signal(str, str)
 
     def __init__(self, parent=None):
@@ -223,6 +225,11 @@ class NeteaseSource(QObject):
         # 由外部注入的进度读取函数：() -> float
         self._position_provider = None
 
+        # 缓存目录
+        cache_dir = settings_path().parent / "cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        self._cache_dir = cache_dir
+
     def set_position_provider(self, provider):
         """
         设置当前播放进度的读取函数。
@@ -232,6 +239,31 @@ class NeteaseSource(QObject):
         """
 
         self._position_provider = provider
+
+    def _get_cached_lyrics(self, track_id: str) -> str | None:
+        """从缓存读取歌词。"""
+        if not track_id or track_id == "0":
+            return None
+        cache_file = self._cache_dir / f"{track_id}.lrc"
+        if cache_file.exists():
+            try:
+                return cache_file.read_text(encoding='utf-8')
+            except Exception:
+                return None
+        return None
+
+    def _save_cached_lyrics(self, track_id: str, lrc_text: str) -> None:
+        """保存歌词到缓存。"""
+        if not track_id or track_id == "0" or not lrc_text:
+            return
+        # 确保缓存目录存在
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = self._cache_dir / f"{track_id}.lrc"
+        try:
+            cache_file.write_text(lrc_text, encoding='utf-8')
+            logger.info(f"歌词缓存已保存: {track_id}")
+        except Exception as e:
+            logger.warning(f"保存歌词缓存失败: {e}")
 
     def handle_track_change(self, song, artist, track_id_str):
         """
@@ -287,13 +319,26 @@ class NeteaseSource(QObject):
         self.fetching = True
 
         def worker():
-            # 优先使用 track_id
             lrc = None
+
+            # 1. 先尝试从缓存读取
             if self._current_track_id and self._current_track_id != "0":
-                lrc = NetEaseMusic.fetch_lyrics_by_id(self._current_track_id)
+                lrc = self._get_cached_lyrics(self._current_track_id)
+                if lrc:
+                    logger.info(f"使用缓存歌词: {song} - {artist}")
+
+            # 2. 缓存未命中，请求网络
             if not lrc:
-                # 回退到搜索
-                lrc = NetEaseMusic.fetch_lyrics(song, artist)
+                if self._current_track_id and self._current_track_id != "0":
+                    lrc = NetEaseMusic.fetch_lyrics_by_id(self._current_track_id)
+                if not lrc:
+                    # 回退到搜索
+                    lrc = NetEaseMusic.fetch_lyrics(song, artist)
+                # 如果获取成功，保存缓存
+                if lrc and self._current_track_id and self._current_track_id != "0":
+                    self._save_cached_lyrics(self._current_track_id, lrc)
+
+            # 3. 发送结果
             self.bridge.result.emit(
                 song,
                 artist or "",
