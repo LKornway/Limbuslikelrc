@@ -81,9 +81,7 @@ class LyricObject:
     height: float
 
     # 字符状态列表
-    characters: list[CharacterState] = field(
-        default_factory=list
-    )
+    characters: list[CharacterState] = field(default_factory=list)
 
     # 字符是否全部出现
     completed: bool = False
@@ -92,7 +90,6 @@ class LyricObject:
     fading: bool = False
 
     fade_start_time: float = 0.0
-
 
     def opacity(self, current_time):
         """
@@ -108,22 +105,11 @@ class LyricObject:
         if not self.fading:
             return 1.0
 
-        elapsed = (
-            current_time
-            - self.fade_start_time
-        )
+        elapsed = current_time - self.fade_start_time
 
-        progress = (
-            elapsed / config.FADE_DURATION
-        )
+        progress = elapsed / config.FADE_DURATION
 
-        return max(
-            0.0,
-            min(
-                1.0,
-                1.0 - progress
-            )
-        )
+        return max(0.0, min(1.0, 1.0 - progress))
 
     def finished(self, current_time):
         """
@@ -139,9 +125,4 @@ class LyricObject:
         if not self.fading:
             return False
 
-        return (
-            current_time
-            >=
-            self.fade_start_time
-            + config.FADE_DURATION
-        )
+        return current_time >= self.fade_start_time + config.FADE_DURATION

@@ -10,13 +10,7 @@ import random
 import time
 
 from PySide6.QtCore import Qt, QTimer, QRectF
-from PySide6.QtGui import (
-    QPainter,
-    QColor,
-    QFont,
-    QFontMetrics,
-    QPainterPath,
-)
+from PySide6.QtGui import QPainter, QColor, QFont, QFontMetrics, QPainterPath
 from PySide6.QtWidgets import QApplication, QWidget
 
 import config
@@ -48,32 +42,14 @@ class LyricsOverlay(QWidget):
         self.lyrics = lyrics
 
         self.netease_source = NeteaseSource()
-
-        self.netease_source.lyrics_ready.connect(
-            self.apply_lyrics
-        )
-
-        self.netease_source.lyrics_cleared.connect(
-            self.clear_lyrics
-        )
+        self.netease_source.lyrics_ready.connect(self.apply_lyrics)
+        self.netease_source.lyrics_cleared.connect(self.clear_lyrics)
 
         self.cloudmusic_watcher = watcher or CloudMusicWatcher()
-
-        self.netease_source.set_position_provider(
-            self.cloudmusic_watcher.current_position
-        )
-
-        self.cloudmusic_watcher.track_changed.connect(
-            self.netease_source.handle_track_change
-        )
-
-        self.cloudmusic_watcher.is_playing_changed.connect(
-            self.apply_playback_status
-        )
-
-        self.cloudmusic_watcher.position_changed.connect(
-            self.apply_playback_position
-        )
+        self.netease_source.set_position_provider(self.cloudmusic_watcher.current_position)
+        self.cloudmusic_watcher.track_changed.connect(self.netease_source.handle_track_change)
+        self.cloudmusic_watcher.is_playing_changed.connect(self.apply_playback_status)
+        self.cloudmusic_watcher.position_changed.connect(self.apply_playback_position)
 
         # 初始状态默认视为播放，实际状态由本地监听回调更新。
         self.is_paused = False
@@ -82,53 +58,30 @@ class LyricsOverlay(QWidget):
         # 在收到第一次有效进度前，仍可用内部计时作为兜底。
         self._has_external_position = False
 
-        screen = (
-            QApplication
-            .primaryScreen()
-            .availableGeometry()
-        )
-
+        screen = QApplication.primaryScreen().availableGeometry()
         self.setGeometry(screen)
 
         self.screen_w = screen.width()
         self.screen_h = screen.height()
 
-        self.font = QFont(
-            config.FONT_FAMILY,
-            config.FONT_SIZE
-        )
-
+        self.font = QFont(config.FONT_FAMILY, config.FONT_SIZE)
         if config.FONT_BOLD:
             self.font.setBold(True)
 
-        self.fm = QFontMetrics(
-            self.font
-        )
-
-        self.line_height = (
-            self.fm.height()
-        )
+        self.fm = QFontMetrics(self.font)
+        self.line_height = self.fm.height()
 
         self.active_lyrics = []
-
         self.next_index = 0
-
         self.current_time = 0.0
-
         self.last_frame_time = time.monotonic()
-
         self.random = random.Random()
-
         self.shake_accumulator = 0.0
 
         self.setup_window()
 
         self.frame_timer = QTimer(self)
-
-        self.frame_timer.timeout.connect(
-            self.update_frame
-        )
-
+        self.frame_timer.timeout.connect(self.update_frame)
         self.frame_timer.start(config.FRAME_INTERVAL)
 
     def apply_lyrics(self, lyrics, start_offset, song, artist):
@@ -149,18 +102,14 @@ class LyricsOverlay(QWidget):
         self._has_external_position = True
         self._resync_lyrics_to_time()
 
-
     def clear_lyrics(self):
         """
         清除当前歌曲的歌词显示状态。
         """
 
         self.lyrics = []
-
         self.active_lyrics.clear()
-
         self.next_index = 0
-
         self.update()
 
     def reload_config(self):
@@ -172,7 +121,6 @@ class LyricsOverlay(QWidget):
         self.line_height = self.fm.height()
 
         self.frame_timer.setInterval(config.FRAME_INTERVAL)
-
         self.repaint()
 
     def apply_playback_status(self, is_playing):
@@ -209,7 +157,6 @@ class LyricsOverlay(QWidget):
             self._resync_lyrics_to_time()
             return
 
-
     def _resync_lyrics_to_time(self):
         """
         按当前时间轴重建已显示歌词。
@@ -229,7 +176,6 @@ class LyricsOverlay(QWidget):
         visible_indices = []
 
         for index, line in enumerate(self.lyrics):
-
             if line.timestamp > t:
                 break
 
@@ -257,8 +203,8 @@ class LyricsOverlay(QWidget):
 
         self.next_index = 0
         while (
-                self.next_index < len(self.lyrics)
-                and self.lyrics[self.next_index].timestamp <= t
+            self.next_index < len(self.lyrics)
+            and self.lyrics[self.next_index].timestamp <= t
         ):
             self.next_index += 1
 
@@ -270,23 +216,14 @@ class LyricsOverlay(QWidget):
         """
 
         self.setWindowFlags(
-            Qt.FramelessWindowHint
-            | Qt.WindowStaysOnTopHint
-            | Qt.Tool
+            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
         )
 
-        self.setAttribute(
-            Qt.WA_TranslucentBackground,
-            True
-        )
-
-        self.setAttribute(
-            Qt.WA_TransparentForMouseEvents,
-            True
-        )
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents, True)
 
         import sys
-        if sys.platform == 'win32':
+        if sys.platform == "win32":
             try:
                 import ctypes
                 from ctypes import wintypes
@@ -316,18 +253,9 @@ class LyricsOverlay(QWidget):
         """
 
         now = time.monotonic()
-
-        elapsed = (
-                now
-                - self.last_frame_time
-        )
-
+        elapsed = now - self.last_frame_time
         self.last_frame_time = now
-
-        elapsed = min(
-            elapsed,
-            0.1
-        )
+        elapsed = min(elapsed, 0.1)
 
         # 暂停时冻结歌词时间轴。
         # 平时由本地按帧平滑推进，保证逐字动画；
@@ -336,9 +264,7 @@ class LyricsOverlay(QWidget):
             self.current_time += elapsed
 
         self.update_lyrics()
-
         self.update_shake()
-
         self.update()
 
     def update_lyrics(self):
@@ -351,47 +277,26 @@ class LyricsOverlay(QWidget):
 
         # 创建当前时间点应该显示的歌词。
         while (
-            self.next_index
-            < len(self.lyrics)
-            and
-            self.lyrics[
-                self.next_index
-            ].timestamp
-            <= self.current_time
+            self.next_index < len(self.lyrics)
+            and self.lyrics[self.next_index].timestamp <= self.current_time
         ):
-
-            self.create_lyric(
-                self.next_index
-            )
-
+            self.create_lyric(self.next_index)
             self.next_index += 1
 
         # 检查是否有歌词达到淡出时间。
         for lyric in self.active_lyrics:
-
             if lyric.fading:
                 continue
 
-            if (
-                self.current_time
-                >= lyric.end_time
-            ):
-
+            if self.current_time >= lyric.end_time:
                 lyric.fading = True
-
-                lyric.fade_start_time = (
-                    self.current_time
-                )
+                lyric.fade_start_time = self.current_time
 
         # 删除已经完成淡出的歌词。
         self.active_lyrics = [
-            lyric
-            for lyric in self.active_lyrics
-            if not lyric.finished(
-                self.current_time
-            )
+            lyric for lyric in self.active_lyrics
+            if not lyric.finished(self.current_time)
         ]
-
 
     def create_lyric(self, index):
         """
@@ -404,79 +309,39 @@ class LyricsOverlay(QWidget):
             index: 要创建的歌词在 LRC 列表中的索引。
         """
         source = self.lyrics[index]
-
         text = source.text
 
         # 让歌词对象在 LRC 时间点前 0.2 秒开始进入生命周期。
         start_time = source.timestamp - 0.2
 
         if index + 1 < len(self.lyrics):
-
-            next_time = (
-                self.lyrics[
-                    index + 1
-                ].timestamp
-            )
-
+            next_time = self.lyrics[index + 1].timestamp
         else:
-
             next_time = None
 
         # 下一句出现后继续保留一段时间，并限制歌词的最大、最小生命周期。
         if next_time is not None:
-
             # 下一句出现后继续保留一段时间，形成歌词重叠效果。
-            desired_end = (
-                next_time
-                + config.OVERLAP_DURATION
-            )
+            desired_end = next_time + config.OVERLAP_DURATION
+            max_end = start_time + config.MAX_LYRIC_LIFETIME
+            min_end = start_time + config.MIN_LYRIC_LIFETIME
 
-            max_end = (
-                start_time
-                + config.MAX_LYRIC_LIFETIME
-            )
-
-            min_end = (
-                start_time
-                + config.MIN_LYRIC_LIFETIME
-            )
-
-            end_time = min(
-                desired_end,
-                max_end
-            )
-
-            end_time = max(
-                end_time,
-                min_end
-            )
-
+            end_time = min(desired_end, max_end)
+            end_time = max(end_time, min_end)
         else:
+            end_time = start_time + config.MAX_LYRIC_LIFETIME
 
-            end_time = (
-                start_time
-                + config.MAX_LYRIC_LIFETIME
-            )
-
-        lines = self.wrap_text(
-            text
-        )
+        lines = self.wrap_text(text)
 
         # 每句歌词创建时随机确定旋转角度，
-        angle = self.random.randint(
-            config.MIN_ANGLE,
-            config.MAX_ANGLE
-        )
+        angle = self.random.randint(config.MIN_ANGLE, config.MAX_ANGLE)
 
-        bounds_width, bounds_height, origin_ox, origin_oy = (
-            self.calculate_bounds(lines, angle)
+        bounds_width, bounds_height, origin_ox, origin_oy = self.calculate_bounds(
+            lines, angle
         )
 
         # find_position 返回的是包围盒左上角
-        box_x, box_y = self.find_position(
-            bounds_width,
-            bounds_height
-        )
+        box_x, box_y = self.find_position(bounds_width, bounds_height)
 
         # 绘制原点 = 包围盒左上角 - 原点偏移
         x = box_x - origin_ox
@@ -485,37 +350,16 @@ class LyricsOverlay(QWidget):
         # 为每个字符保存固定的生成位置和出现时间。
         characters = []
 
-        for line_index, line_text in enumerate(
-            lines
-        ):
-
+        for line_index, line_text in enumerate(lines):
             cursor = 0.0
 
-            for char_index, char in enumerate(
-                line_text
-            ):
-
-                char_width = (
-                    self.fm.horizontalAdvance(
-                        char
-                    )
-                )
+            for char_index, char in enumerate(line_text):
+                char_width = self.fm.horizontalAdvance(char)
 
                 # 同一行的字符按照固定间隔依次出现。
-                global_index = (
-                    self.get_global_char_index(
-                        lines,
-                        line_index,
-                        char_index
-                    )
-                )
+                global_index = self.get_global_char_index(lines, line_index, char_index)
 
-                appear_time = (
-                    start_time
-                    +
-                    global_index
-                    * config.CHAR_INTERVAL
-                )
+                appear_time = start_time + global_index * config.CHAR_INTERVAL
 
                 characters.append(
                     CharacterState(
@@ -523,14 +367,11 @@ class LyricsOverlay(QWidget):
                         appear_time=appear_time,
                         cursor=cursor,
                         line_index=line_index,
-                        width=char_width
+                        width=char_width,
                     )
                 )
 
-                cursor += (
-                    char_width
-                    + config.CHAR_SPACING
-                )
+                cursor += char_width + config.CHAR_SPACING
 
         lyric = LyricObject(
             text=text,
@@ -542,61 +383,31 @@ class LyricsOverlay(QWidget):
             lines=lines,
             width=bounds_width,
             height=bounds_height,
-            characters=characters
+            characters=characters,
         )
 
         # 限制同时存在的歌词数量。
-        if (
-            len(self.active_lyrics)
-            >= config.MAX_ACTIVE_LINES
-        ):
-
-            self.active_lyrics.sort(
-                key=lambda item:
-                item.start_time
-            )
-
-            oldest = (
-                self.active_lyrics.pop(0)
-            )
+        if len(self.active_lyrics) >= config.MAX_ACTIVE_LINES:
+            self.active_lyrics.sort(key=lambda item: item.start_time)
+            oldest = self.active_lyrics.pop(0)
 
             # 超出同时显示数量限制时，让最早的歌词立即开始淡出。
             oldest.fading = True
+            oldest.fade_start_time = self.current_time
 
-            oldest.fade_start_time = (
-                self.current_time
-            )
+        self.active_lyrics.append(lyric)
 
-        self.active_lyrics.append(
-            lyric
-        )
-
-        logger.info(
-            f"{text}"
-            f" | angle={angle}°"
-            f" | ({x:.0f}, {y:.0f})"
-        )
-
+        logger.info(f"{text} | angle={angle}° | ({x:.0f}, {y:.0f})")
 
     @staticmethod
     def get_global_char_index(lines, line_index, char_index):
         """计算字符在所有行中的全局索引。"""
 
         total = 0
+        for i in range(line_index):
+            total += len(lines[i])
 
-        for i in range(
-            line_index
-        ):
-
-            total += len(
-                lines[i]
-            )
-
-        return (
-            total
-            + char_index
-        )
-
+        return total + char_index
 
     def wrap_text(self, text):
         """
@@ -612,145 +423,56 @@ class LyricsOverlay(QWidget):
             自动分行后的文本列表。
         """
 
-        max_width = (
-            self.screen_w
-            * config.MAX_WIDTH_RATIO
-        )
+        max_width = self.screen_w * config.MAX_WIDTH_RATIO
 
         # 未超过最大宽度时无需换行。
-        if (
-            self.fm.horizontalAdvance(
-                text
-            )
-            <= max_width
-        ):
-
+        if self.fm.horizontalAdvance(text) <= max_width:
             return [text]
 
         # 英文等包含空格的文本优先按单词换行。
         if " " in text:
-
             words = text.split()
-
             lines = []
-
             current = ""
 
             for word in words:
+                candidate = word if not current else current + " " + word
+                candidate_width = self.fm.horizontalAdvance(candidate)
 
-                candidate = (
-                    word
-                    if not current
-                    else
-                    current
-                    + " "
-                    + word
-                )
-
-                candidate_width = (
-                    self.fm.horizontalAdvance(
-                        candidate
-                    )
-                )
-
-                if (
-                    candidate_width
-                    <= max_width
-                ):
-
+                if candidate_width <= max_width:
                     current = candidate
-
                 else:
-
                     if current:
-
-                        lines.append(
-                            current
-                        )
-
+                        lines.append(current)
                     current = word
 
             if current:
-
-                lines.append(
-                    current
-                )
+                lines.append(current)
 
             if len(lines) <= 2:
-
                 return lines
 
         # 中文、日文等无空格文本：在满足宽度限制的前提下，寻找左右宽度最接近的切分点。
         chars = list(text)
-
-        best_split = (
-            len(chars) // 2
-        )
-
+        best_split = len(chars) // 2
         best_score = float("inf")
 
-        for split in range(
-            1,
-            len(chars)
-        ):
+        for split in range(1, len(chars)):
+            left = "".join(chars[:split])
+            right = "".join(chars[split:])
+            left_width = self.fm.horizontalAdvance(left)
+            right_width = self.fm.horizontalAdvance(right)
 
-            left = "".join(
-                chars[:split]
-            )
+            if left_width <= max_width and right_width <= max_width:
+                difference = abs(left_width - right_width)
 
-            right = "".join(
-                chars[split:]
-            )
-
-            left_width = (
-                self.fm.horizontalAdvance(
-                    left
-                )
-            )
-
-            right_width = (
-                self.fm.horizontalAdvance(
-                    right
-                )
-            )
-
-            if (
-                left_width <= max_width
-                and
-                right_width <= max_width
-            ):
-
-                difference = abs(
-                    left_width
-                    - right_width
-                )
-
-                if (
-                    difference
-                    < best_score
-                ):
-
-                    best_score = (
-                        difference
-                    )
-
+                if difference < best_score:
+                    best_score = difference
                     best_split = split
 
-        return [
-            "".join(
-                chars[:best_split]
-            ),
-            "".join(
-                chars[best_split:]
-            )
-        ]
+        return ["".join(chars[:best_split]), "".join(chars[best_split:])]
 
-
-    def calculate_bounds(
-        self,
-        lines,
-        angle
-    ):
+    def calculate_bounds(self, lines, angle):
         """
         计算旋转歌词所需的包围尺寸。
 
@@ -762,17 +484,9 @@ class LyricsOverlay(QWidget):
             包围歌词内容的宽度和高度。
         """
 
-        angle_rad = math.radians(
-            angle
-        )
-
-        dx = math.cos(
-            angle_rad
-        )
-
-        dy = math.sin(
-            angle_rad
-        )
+        angle_rad = math.radians(angle)
+        dx = math.cos(angle_rad)
+        dy = math.sin(angle_rad)
 
         # 计算垂直于文字生成方向的单位向量。
         nx = -dy
@@ -780,82 +494,27 @@ class LyricsOverlay(QWidget):
 
         points = []
 
-        for line_index, line_text in enumerate(
-            lines
-        ):
-
+        for line_index, line_text in enumerate(lines):
             cursor = 0.0
 
             for char in line_text:
-
-                cw = (
-                    self.fm.horizontalAdvance(
-                        char
-                    )
-                )
+                cw = self.fm.horizontalAdvance(char)
 
                 # 字符左侧
-                x1 = (
-                    cursor * dx
-                    +
-                    line_index
-                    * self.line_height
-                    * nx
-                )
-
-                y1 = (
-                    cursor * dy
-                    +
-                    line_index
-                    * self.line_height
-                    * ny
-                )
+                x1 = cursor * dx + line_index * self.line_height * nx
+                y1 = cursor * dy + line_index * self.line_height * ny
 
                 # 字符右侧
-                x2 = (
-                    (
-                        cursor
-                        + cw
-                    )
-                    * dx
-                    +
-                    line_index
-                    * self.line_height
-                    * nx
-                )
+                x2 = (cursor + cw) * dx + line_index * self.line_height * nx
+                y2 = (cursor + cw) * dy + line_index * self.line_height * ny
 
-                y2 = (
-                    (
-                        cursor
-                        + cw
-                    )
-                    * dy
-                    +
-                    line_index
-                    * self.line_height
-                    * ny
-                )
+                points.append((x1, y1))
+                points.append((x2, y2))
 
-                points.append(
-                    (x1, y1)
-                )
-
-                points.append(
-                    (x2, y2)
-                )
-
-                cursor += (
-                    cw
-                    + config.CHAR_SPACING
-                )
+                cursor += cw + config.CHAR_SPACING
 
         if not points:
-            return (
-                100,
-                self.line_height,
-                0.0,
-                0.0,
-            )
+            return (100, self.line_height, 0.0, 0.0)
 
         min_x = min(p[0] for p in points)
         max_x = max(p[0] for p in points)
@@ -872,12 +531,7 @@ class LyricsOverlay(QWidget):
             min_y - pad,
         )
 
-
-    def find_position(
-        self,
-        width,
-        height
-    ):
+    def find_position(self, width, height):
         """
         为歌词寻找屏幕内合适的显示位置。
 
@@ -893,118 +547,52 @@ class LyricsOverlay(QWidget):
         """
 
         min_x = config.SCREEN_MARGIN
-
         min_y = config.SCREEN_MARGIN
-
-        max_x = (
-            self.screen_w
-            - width
-            - config.SCREEN_MARGIN
-        )
-
-        max_y = (
-            self.screen_h
-            - height
-            - config.SCREEN_MARGIN
-        )
-
-        max_x = max(
-            min_x,
-            max_x
-        )
-
-        max_y = max(
-            min_y,
-            max_y
-        )
+        max_x = self.screen_w - width - config.SCREEN_MARGIN
+        max_y = self.screen_h - height - config.SCREEN_MARGIN
+        max_x = max(min_x, max_x)
+        max_y = max(min_y, max_y)
 
         best = None
-
         best_score = -float("inf")
 
         for _ in range(100):
-
-            x = self.random.uniform(
-                min_x,
-                max_x
-            )
-
-            y = self.random.uniform(
-                min_y,
-                max_y
-            )
+            x = self.random.uniform(min_x, max_x)
+            y = self.random.uniform(min_y, max_y)
 
             rect = QRectF(
                 x - config.POSITION_PADDING,
                 y - config.POSITION_PADDING,
-                width
-                + config.POSITION_PADDING * 2,
-                height
-                + config.POSITION_PADDING * 2
+                width + config.POSITION_PADDING * 2,
+                height + config.POSITION_PADDING * 2,
             )
 
             score = 0
 
-            for lyric in (
-                self.active_lyrics
-            ):
-
+            for lyric in self.active_lyrics:
                 other = QRectF(
-                    lyric.x
-                    - config.POSITION_PADDING,
-
-                    lyric.y
-                    - config.POSITION_PADDING,
-
-                    lyric.width
-                    + config.POSITION_PADDING * 2,
-
-                    lyric.height
-                    + config.POSITION_PADDING * 2
+                    lyric.x - config.POSITION_PADDING,
+                    lyric.y - config.POSITION_PADDING,
+                    lyric.width + config.POSITION_PADDING * 2,
+                    lyric.height + config.POSITION_PADDING * 2,
                 )
 
-                if rect.intersects(
-                    other
-                ):
-
-                    overlap = (
-                        rect.intersected(
-                            other
-                        )
-                    )
-
-                    score -= (
-                        overlap.width()
-                        *
-                        overlap.height()
-                    )
+                if rect.intersects(other):
+                    overlap = rect.intersected(other)
+                    score -= overlap.width() * overlap.height()
 
             # 找到完全不重叠的位置后立即采用。
             if score == 0:
-
-                return (
-                    x,
-                    y
-                )
+                return (x, y)
 
             if score > best_score:
-
                 best_score = score
-
-                best = (
-                    x,
-                    y
-                )
+                best = (x, y)
 
         if best:
-
             return best
 
-        return (
-            min_x,
-            min_y
-        )
-
+        return (min_x, min_y)
 
     def update_shake(self):
         """
@@ -1013,46 +601,22 @@ class LyricsOverlay(QWidget):
 
         self.shake_accumulator += 16
 
-        if (
-            self.shake_accumulator
-            <
-            config.SHAKE_INTERVAL
-        ):
-
+        if self.shake_accumulator < config.SHAKE_INTERVAL:
             return
 
         self.shake_accumulator = 0
 
-        for lyric in (
-            self.active_lyrics
-        ):
-
+        for lyric in self.active_lyrics:
             for char in lyric.characters:
-
-                char.target_x = (
-                    self.random.randint(
-                        -config.SHAKE_INTENSITY,
-                        config.SHAKE_INTENSITY
-                    )
+                char.target_x = self.random.randint(
+                    -config.SHAKE_INTENSITY, config.SHAKE_INTENSITY
+                )
+                char.target_y = self.random.randint(
+                    -config.SHAKE_INTENSITY, config.SHAKE_INTENSITY
                 )
 
-                char.target_y = (
-                    self.random.randint(
-                        -config.SHAKE_INTENSITY,
-                        config.SHAKE_INTENSITY
-                    )
-                )
-
-                char.shake_x += (
-                    char.target_x
-                    - char.shake_x
-                ) * config.SHAKE_FOLLOW
-
-                char.shake_y += (
-                    char.target_y
-                    - char.shake_y
-                ) * config.SHAKE_FOLLOW
-
+                char.shake_x += (char.target_x - char.shake_x) * config.SHAKE_FOLLOW
+                char.shake_y += (char.target_y - char.shake_y) * config.SHAKE_FOLLOW
 
     def paintEvent(self, event):
         """
@@ -1060,32 +624,15 @@ class LyricsOverlay(QWidget):
         """
 
         painter = QPainter(self)
-
-        painter.setRenderHint(
-            QPainter.Antialiasing,
-            True
-        )
+        painter.setRenderHint(QPainter.Antialiasing, True)
 
         # 按开始时间绘制，保持歌词叠加顺序稳定。
-        for lyric in sorted(
-            self.active_lyrics,
-            key=lambda item:
-            item.start_time
-        ):
-
-            self.draw_lyric(
-                painter,
-                lyric
-            )
+        for lyric in sorted(self.active_lyrics, key=lambda item: item.start_time):
+            self.draw_lyric(painter, lyric)
 
         painter.end()
 
-
-    def draw_lyric(
-        self,
-        painter,
-        lyric
-    ):
+    def draw_lyric(self, painter, lyric):
         """
         绘制单句歌词及其逐字符动画效果。
 
@@ -1093,146 +640,70 @@ class LyricsOverlay(QWidget):
         抖动偏移和当前透明度绘制歌词。
         """
 
-        opacity = lyric.opacity(
-            self.current_time
-        )
+        opacity = lyric.opacity(self.current_time)
 
         if opacity <= 0:
-
             return
 
         painter.save()
+        painter.translate(lyric.x, lyric.y)
 
-        painter.translate(
-            lyric.x,
-            lyric.y
-        )
-
-        angle_rad = math.radians(
-            lyric.angle
-        )
+        angle_rad = math.radians(lyric.angle)
 
         for char in lyric.characters:
-
             # 尚未到字符出现时间时跳过绘制。
-            if (
-                self.current_time
-                <
-                char.appear_time
-            ):
-
+            if self.current_time < char.appear_time:
                 continue
 
-            ox = (
-                char.cursor
-                * math.cos(
-                    angle_rad
-                )
-            )
-
-            oy = (
-                char.cursor
-                * math.sin(
-                    angle_rad
-                )
-            )
+            ox = char.cursor * math.cos(angle_rad)
+            oy = char.cursor * math.sin(angle_rad)
 
             # 多行歌词的行间距沿生成方向的法线计算，
             # 因此所有行保持相同的旋转角度。
             if char.line_index != 0:
+                normal_x = -math.sin(angle_rad)
+                normal_y = math.cos(angle_rad)
+                line_offset = char.line_index * self.line_height
 
-                normal_x = -math.sin(
-                    angle_rad
-                )
-
-                normal_y = math.cos(
-                    angle_rad
-                )
-
-                line_offset = (
-                    char.line_index
-                    * self.line_height
-                )
-
-                ox += (
-                    normal_x
-                    * line_offset
-                )
-
-                oy += (
-                    normal_y
-                    * line_offset
-                )
+                ox += normal_x * line_offset
+                oy += normal_y * line_offset
 
             # 应用当前字符的抖动偏移。
             ox += char.shake_x
             oy += char.shake_y
 
-            alpha = int(
-                255 * opacity
-            )
+            alpha = int(255 * opacity)
 
             # 绘制偏移后的阴影，增加文字的立体感。
-            shadow_color = QColor(
-                config.STROKE_COLOR
-            )
-
-            shadow_color.setAlpha(
-                alpha
-            )
+            shadow_color = QColor(config.STROKE_COLOR)
+            shadow_color.setAlpha(alpha)
 
             path_shadow = QPainterPath()
-
             path_shadow.addText(
                 ox + 3,
-                oy
-                + 3
-                + self.line_height / 3,
+                oy + 3 + self.line_height / 3,
                 self.font,
-                char.char
+                char.char,
             )
 
-            painter.setPen(
-                Qt.NoPen
-            )
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(shadow_color)
+            painter.drawPath(path_shadow)
 
-            painter.setBrush(
-                shadow_color
-            )
-
-            painter.drawPath(
-                path_shadow
-            )
-
-            text_color = QColor(
-                config.TEXT_COLOR
-            )
-
-            text_color.setAlpha(
-                alpha
-            )
+            text_color = QColor(config.TEXT_COLOR)
+            text_color.setAlpha(alpha)
 
             path_text = QPainterPath()
-
             path_text.addText(
                 ox,
-                oy
-                + self.line_height / 3,
+                oy + self.line_height / 3,
                 self.font,
-                char.char
+                char.char,
             )
 
-            painter.setPen(
-                Qt.NoPen
-            )
-
-            painter.setBrush(
-                text_color
-            )
-
-            painter.drawPath(
-                path_text
-            )
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(text_color)
+            painter.drawPath(path_text)
 
         painter.restore()
 
@@ -1240,9 +711,7 @@ class LyricsOverlay(QWidget):
         """处理键盘事件（ESC 退出）。"""
 
         if event.key() == Qt.Key_Escape:
-
             QApplication.quit()
-
             return
 
         super().keyPressEvent(event)

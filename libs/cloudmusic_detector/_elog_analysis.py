@@ -56,17 +56,16 @@ def decode_elog(data: bytes) -> str:
 
     解码是逐字节的纯函数，用查表 + ``bytes.translate``（C 实现）加速，
     避免在大文件（可达 10MB+）上做逐字节 Python 循环而长时间占用 GIL。
+
+    注意：日志中可能混入非 UTF-8 内容（例如网易云客户端把 Windows 系统
+    错误消息按 GBK 写入中文），因此使用 ``errors="replace"`` 单次解码，
+    损坏字节替换为占位符。切勿对整块数据做"丢一个字节重试"——文件中间
+    的非法字节永远不会被丢掉，会导致无限重试、监听线程永久卡死。
     """
     global _DECODE_TABLE
     if _DECODE_TABLE is None:
         _DECODE_TABLE = _build_decode_table()
-    buf = data.translate(_DECODE_TABLE)
-    while len(buf) > 0:
-        try:
-            return buf.decode("utf-8")
-        except (UnicodeDecodeError, ValueError):
-            buf = buf[1:]
-    return ""
+    return data.translate(_DECODE_TABLE).decode("utf-8", errors="replace")
 
 
 _HEADER_RE = re.compile(

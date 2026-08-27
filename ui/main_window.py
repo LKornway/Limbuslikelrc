@@ -805,9 +805,7 @@ class MainWindow(QMainWindow):
             self._resize_edge = edge
             self._drag_pos = event.globalPosition().toPoint()
         elif pos.y() <= 36:
-            self._drag_pos = (
-                event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-            )
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             self._resize_edge = None
         else:
             self._drag_pos = None

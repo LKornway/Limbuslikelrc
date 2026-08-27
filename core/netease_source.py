@@ -82,11 +82,7 @@ class NetEaseMusic:
 
             data = response.json()
 
-            songs = (
-                data
-                .get("result", {})
-                .get("songs", [])
-            )
+            songs = data.get("result", {}).get("songs", [])
 
             if not songs:
                 logger.error(f"搜索不到：{keyword}")
@@ -117,26 +113,18 @@ class NetEaseMusic:
 
             lyric_data = lyric_response.json()
 
-            lrc = (
-                lyric_data
-                .get("lrc", {})
-                .get("lyric", "")
-            )
+            lrc = lyric_data.get("lrc", {}).get("lyric", "")
 
             if not lrc or "[" not in lrc:
-
                 logger.info(f"「{song}」没有可用 LRC")
-
                 return None
 
             return lrc
 
         except requests.RequestException as exc:
-
             logger.error(f"网络请求失败：{exc}")
 
         except Exception as exc:
-
             logger.error(f"获取歌词失败：{exc}")
 
         return None
@@ -203,9 +191,7 @@ class NeteaseSource(QObject):
 
         self.bridge = NetEaseBridge()
 
-        self.bridge.result.connect(
-            self._on_fetch_done
-        )
+        self.bridge.result.connect(self._on_fetch_done)
 
         self.fetching = False
         self.current_song_key = None
@@ -246,7 +232,7 @@ class NeteaseSource(QObject):
         cache_file = self._cache_dir / f"{track_id}.lrc"
         if cache_file.exists():
             try:
-                return cache_file.read_text(encoding='utf-8')
+                return cache_file.read_text(encoding="utf-8")
             except Exception:
                 return None
         return None
@@ -259,7 +245,7 @@ class NeteaseSource(QObject):
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         cache_file = self._cache_dir / f"{track_id}.lrc"
         try:
-            cache_file.write_text(lrc_text, encoding='utf-8')
+            cache_file.write_text(lrc_text, encoding="utf-8")
             logger.info(f"歌词缓存已保存: {track_id}")
         except Exception as e:
             logger.warning(f"保存歌词缓存失败: {e}")
@@ -277,10 +263,7 @@ class NeteaseSource(QObject):
         if not song:
             return
 
-        song_key = (
-            song.strip().lower(),
-            (artist or "").strip().lower()
-        )
+        song_key = (song.strip().lower(), (artist or "").strip().lower())
 
         if song_key == self.current_song_key:
             return
@@ -303,15 +286,10 @@ class NeteaseSource(QObject):
 
         # 记录识别到新歌时的真实播放进度。
         if self._position_provider is not None:
-
             try:
-                self.song_position_at_detect = float(
-                    self._position_provider()
-                )
-
+                self.song_position_at_detect = float(self._position_provider())
             except Exception:
                 self.song_position_at_detect = 0.0
-
         else:
             self.song_position_at_detect = 0.0
 
@@ -342,21 +320,12 @@ class NeteaseSource(QObject):
                 song,
                 artist or "",
                 lrc or "",
-                "ok" if lrc else "error"
+                "ok" if lrc else "error",
             )
 
-        threading.Thread(
-            target=worker,
-            daemon=True
-        ).start()
+        threading.Thread(target=worker, daemon=True).start()
 
-    def _on_fetch_done(
-        self,
-        song,
-        artist,
-        lrc_text,
-        status
-    ):
+    def _on_fetch_done(self, song, artist, lrc_text, status):
         """
         处理后台歌词请求结果。
 
@@ -375,17 +344,10 @@ class NeteaseSource(QObject):
         # 如果请求期间已经切换歌曲，
         # 当前请求返回的歌词就不再属于正在播放的歌曲。
 
-        result_song_key = (
-            song.strip().lower(),
-            (artist or "").strip().lower()
-        )
+        result_song_key = (song.strip().lower(), (artist or "").strip().lower())
 
         if result_song_key != self.current_song_key:
-            logger.info(
-                f"歌词返回时歌曲已变化，丢弃："
-                f"{song} - {artist}"
-            )
-
+            logger.info(f"歌词返回时歌曲已变化，丢弃：{song} - {artist}")
             return
 
         if status != "ok":
@@ -406,33 +368,18 @@ class NeteaseSource(QObject):
         position = self.song_position_at_detect
 
         if self._position_provider is not None:
-
             try:
-                position = float(
-                    self._position_provider()
-                )
-
+                position = float(self._position_provider())
             except Exception:
                 pass
 
         # 手动延迟补偿：
         # 正数：歌词提前
         # 负数：歌词延后
-        start_offset = (
-                max(0.0, position)
-                + config.LYRIC_MANUAL_OFFSET
-        )
+        start_offset = max(0.0, position) + config.LYRIC_MANUAL_OFFSET
 
         logger.info(f"已获取歌词：{song} - {artist}")
 
-        logger.info(
-            f"共 {len(lyrics)} 句"
-            f" | 起始进度 {start_offset:.2f}s"
-        )
+        logger.info(f"共 {len(lyrics)} 句 | 起始进度 {start_offset:.2f}s")
 
-        self.lyrics_ready.emit(
-            lyrics,
-            start_offset,
-            song,
-            artist
-        )
+        self.lyrics_ready.emit(lyrics, start_offset, song, artist)

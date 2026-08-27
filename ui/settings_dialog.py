@@ -414,9 +414,7 @@ class SettingsDialog(QDialog):
                 key, kind, self._editors[key]
             )
 
-        self._app_settings["minimize_to_tray_on_close"] = (
-            self.tray_combo.currentData()
-        )
+        self._app_settings["minimize_to_tray_on_close"] = self.tray_combo.currentData()
 
         for key, editor in self._hotkey_editors.items():
             self._app_settings[key] = editor.keys

@@ -117,9 +117,7 @@ def _extract_color_clusters(
 
     total_pixels = sum(c["count"] for c in clusters)
     for cluster in clusters:
-        cluster["proportion"] = (
-            cluster["count"] / total_pixels if total_pixels else 0.0
-        )
+        cluster["proportion"] = cluster["count"] / total_pixels if total_pixels else 0.0
 
     clusters.sort(key=lambda c: c["proportion"], reverse=True)
     return clusters

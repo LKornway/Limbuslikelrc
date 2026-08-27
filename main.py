@@ -24,9 +24,8 @@ from ui.overlay import LyricsOverlay
 def main():
     """启动主界面与歌词悬浮窗口。
 
-    Loads user settings, creates the Qt application, initializes the single
-    CloudMusicWatcher instance, and builds both the main window and the lyrics
-    overlay. Connects signals and enters the event loop.
+    加载用户设置，创建 Qt 应用，初始化唯一的 CloudMusicWatcher 实例，
+    并构建主窗口与歌词悬浮层。连接信号后进入事件循环。
     """
 
     load_settings()

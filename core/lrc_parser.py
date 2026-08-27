@@ -11,8 +11,7 @@ from core.models import LRCLine
 
 # 常见非歌词元信息行：作词/作曲/编曲等
 _META_LINE_RE = re.compile(
-    r"^("
-    r"作词|作曲|编曲|作詞|詞|曲|编|編曲|編|唄|"
+    r"^(作词|作曲|编曲|作詞|詞|曲|编|編曲|編|唄|"
     r"演唱|歌手|演唱者|原唱|翻唱|"
     r"混音|混缩|制作人|监制|出品|出品人|"
     r"录音|和声|吉他|贝斯|鼓|弦乐|"
@@ -46,25 +45,16 @@ def parse_lrc_text(lrc_text):
         return []
 
     result = []
+    pattern = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
 
-    pattern = re.compile(
-        r"\[(\d+):(\d+(?:\.\d+)?)\]"
-    )
-
-    for raw_line in (
-        lrc_text
-        .replace("\r\n", "\n")
-        .replace("\r", "\n")
-        .split("\n")
-    ):
-
+    for raw_line in lrc_text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         raw_line = raw_line.strip()
 
         if not raw_line:
             continue
 
         # 将 [mm:ss:cc] 转换为 [mm:ss.cc]
-        raw_line = re.sub(r'\[(\d+):(\d+):(\d+)\]', r'[\1:\2.\3]', raw_line)
+        raw_line = re.sub(r"\[(\d+):(\d+):(\d+)\]", r"[\1:\2.\3]", raw_line)
 
         matches = list(pattern.finditer(raw_line))
 
@@ -80,14 +70,11 @@ def parse_lrc_text(lrc_text):
             continue
 
         for match in matches:
-
             minutes = int(match.group(1))
             seconds = float(match.group(2))
             timestamp = minutes * 60 + seconds
 
-            result.append(
-                LRCLine(timestamp, text)
-            )
+            result.append(LRCLine(timestamp, text))
 
     result.sort(key=lambda item: item.timestamp)
 
