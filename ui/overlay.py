@@ -24,7 +24,7 @@ def create_source(platform="netease"):
     按音乐平台创建歌词来源。
 
     Args:
-        platform: "netease" 或 "qq"。
+        platform: "netease"、"qq" 或 "kugou"。
 
     Returns:
         QObject: 具备 lyrics_ready/lyrics_cleared/lyrics_failed 信号的来源。
@@ -32,8 +32,31 @@ def create_source(platform="netease"):
     if platform == "qq":
         from core.QQmusic.qqmusic_source import QQMusicSource
         return QQMusicSource()
+    if platform == "kugou":
+        from core.Kugou.kugou_source import KugouSource
+        return KugouSource()
     from core.Cloudmusic.netease_source import NeteaseSource
     return NeteaseSource()
+
+
+def create_watcher(platform="netease"):
+    """
+    按音乐平台创建播放监测器。
+
+    Args:
+        platform: "netease"、"qq" 或 "kugou"。
+
+    Returns:
+        QObject: 具备 track_changed/is_playing_changed/position_changed 信号。
+    """
+    if platform == "qq":
+        from core.QQmusic.qqmusic_watcher import QQMusicWatcher
+        return QQMusicWatcher()
+    if platform == "kugou":
+        from core.Kugou.kugou_watcher import KugouWatcher
+        return KugouWatcher()
+    from core.Cloudmusic.cloudmusic_watcher import CloudMusicWatcher
+    return CloudMusicWatcher()
 
 
 class LyricsOverlay(QWidget):
@@ -51,7 +74,7 @@ class LyricsOverlay(QWidget):
             lyrics: 初始歌词列表（通常为空）。
             watcher: 播放监测器实例，若未提供则按平台新建。
             source: 歌词来源实例，若未提供则按平台新建。
-            platform: 音乐平台，netease 或 qq。
+            platform: 音乐平台，netease / qq / kugou。
         """
 
         super().__init__()
@@ -60,12 +83,7 @@ class LyricsOverlay(QWidget):
 
         # 播放监测器与歌词来源按平台装配
         if watcher is None:
-            if platform == "qq":
-                from core.QQmusic.qqmusic_watcher import QQMusicWatcher
-                watcher = QQMusicWatcher()
-            else:
-                from core.Cloudmusic.cloudmusic_watcher import CloudMusicWatcher
-                watcher = CloudMusicWatcher()
+            watcher = create_watcher(platform)
 
         self.watcher = watcher
         self.source = source or create_source(platform)

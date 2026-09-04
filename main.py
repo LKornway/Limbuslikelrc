@@ -17,24 +17,7 @@ setup_logging()
 from core.settings_store import load_settings
 from core.updater import UpdateChecker, Downloader, install_update, GITHUB_API_URL
 from ui.main_window import MainWindow
-from ui.overlay import LyricsOverlay
-
-
-def create_watcher(platform):
-    """
-    按音乐平台创建播放监测器。
-
-    Args:
-        platform: "netease" 或 "qq"。
-
-    Returns:
-        QObject: 具备 track_changed/is_playing_changed/position_changed 信号。
-    """
-    if platform == "qq":
-        from core.QQmusic.qqmusic_watcher import QQMusicWatcher
-        return QQMusicWatcher()
-    from core.Cloudmusic.cloudmusic_watcher import CloudMusicWatcher
-    return CloudMusicWatcher()
+from ui.overlay import LyricsOverlay, create_watcher
 
 
 def main():
@@ -68,6 +51,10 @@ def main():
     overlay.source.lyrics_cleared.connect(
         lambda: main_window.set_lyric_status("")
     )
+
+    # 酷狗平台：歌词来源附带专辑封面（读取本地 AlbumImg 缓存）
+    if platform == "kugou" and hasattr(overlay.source, "cover_ready"):
+        overlay.source.cover_ready.connect(main_window._on_watcher_cover)
 
     main_window.show()
     overlay.show()

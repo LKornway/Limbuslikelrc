@@ -238,10 +238,24 @@ class SettingsDialog(QDialog):
         self.platform_combo = QComboBox()
         self.platform_combo.addItem("网易云音乐", "netease")
         self.platform_combo.addItem("QQ 音乐", "qq")
+        self.platform_combo.addItem("酷狗音乐", "kugou")
         current_platform = self._app_settings.get("music_platform", "netease")
         platform_index = self.platform_combo.findData(current_platform)
         self.platform_combo.setCurrentIndex(max(0, platform_index))
         app_form.addRow("音乐平台（重启生效）", self.platform_combo)
+
+        # 酷狗平台限制提示
+        self.platform_hint = QLabel(
+            "酷狗音乐：托盘运行可能不稳定，建议小窗运行\n"
+            "无法获取播放进度与歌曲总时长，\n"
+            "歌词自切歌起按本地时钟从头展示\n"
+            "（暂停/继续与真实进度不可感知）；支持本地专辑封面。"
+        )
+        self.platform_hint.setWordWrap(True)
+        self.platform_hint.setStyleSheet("color: #b0a080; font-size: 11px;")
+        app_form.addRow("", self.platform_hint)
+        self.platform_combo.currentIndexChanged.connect(self._on_platform_changed)
+        self._update_platform_hint()
 
         self.tray_combo = QComboBox()
         self.tray_combo.addItem("每次询问", None)
@@ -447,6 +461,28 @@ class SettingsDialog(QDialog):
         """在浏览器中打开项目 GitHub 页面。"""
 
         QDesktopServices.openUrl(QUrl(GITHUB_URL))
+
+    def _on_platform_changed(self):
+        """平台选择变化时更新提示，并在首次选择酷狗时说明限制。"""
+        self._update_platform_hint()
+        if self.platform_combo.currentData() == "kugou":
+            QMessageBox.information(
+                self,
+                "酷狗音乐限制",
+                "酷狗音乐客户端不提供播放进度接口，界面进度也无法稳定识别。\n\n"
+                "选择酷狗后：\n"
+                "建议酷狗小窗运行，托盘运行不稳定\n"
+                "· 歌词自每次切歌起按本地时钟从头展示（无法感知暂停/继续，"
+                "长时间播放可能累积偏差）；\n"
+                "· 专辑封面从酷狗本地缓存读取；\n"
+                "· 无法显示歌曲总时长。\n\n"
+                "切换平台后需重启程序生效。",
+            )
+
+    def _update_platform_hint(self):
+        """按当前平台显示/隐藏限制提示。"""
+        is_kugou = self.platform_combo.currentData() == "kugou"
+        self.platform_hint.setVisible(is_kugou)
 
     def _clear_cache(self):
         """清除歌词缓存文件。"""
