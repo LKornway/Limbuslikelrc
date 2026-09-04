@@ -7,7 +7,7 @@
 
 from PySide6.QtGui import QColor
 
-APP_VERSION = "1.7.1"
+APP_VERSION = "2.0.0"
 
 ## 歌词显示限制
 MAX_ACTIVE_LINES = 5

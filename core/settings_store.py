@@ -24,6 +24,7 @@ APP_DEFAULTS = {
     "ui_border": "#3a3a45",
     "ui_accent": "#d8a523",
     "ui_text": "#f2f2f2",
+    "music_platform": "netease",
     "hotkey_play_pause": ["ctrl", "alt", "p"],
     "hotkey_next": ["ctrl", "alt", "right"],
     "hotkey_previous": ["ctrl", "alt", "left"],

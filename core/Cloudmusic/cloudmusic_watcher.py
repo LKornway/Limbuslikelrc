@@ -21,11 +21,14 @@ logger = get_logger()
 class CloudMusicWatcher(QObject):
     """
     网易云本地播放状态监听器，通过轮询提供切歌、播放/暂停和进度信号。
+
+    与 QQ 音乐监测器保持统一信号签名：
+    track_changed(song, artist, track_id, album) —— 网易云不提供专辑名，album 固定为空。
     """
 
     is_playing_changed = Signal(bool)
     position_changed = Signal(float)
-    track_changed = Signal(str, str, str)
+    track_changed = Signal(str, str, str, str)
 
     @staticmethod
     def _find_elog_path():
@@ -108,7 +111,7 @@ class CloudMusicWatcher(QObject):
             self._last_track_key = track_key
             logger.info(f"当前歌曲：{song} - {artist}")
             track_id = track.id if track.id != -1 else 0
-            self.track_changed.emit(song, artist, str(track_id))
+            self.track_changed.emit(song, artist, str(track_id), "")
 
         is_playing = state.is_playing
         if is_playing != self._last_playing:

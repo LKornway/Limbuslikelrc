@@ -15,10 +15,25 @@ from PySide6.QtWidgets import QApplication, QWidget
 
 import config
 from core.models import CharacterState, LyricObject
-from core.netease_source import NeteaseSource
-from core.cloudmusic_watcher import CloudMusicWatcher
 from core.logger import get_logger
 logger = get_logger()
+
+
+def create_source(platform="netease"):
+    """
+    按音乐平台创建歌词来源。
+
+    Args:
+        platform: "netease" 或 "qq"。
+
+    Returns:
+        QObject: 具备 lyrics_ready/lyrics_cleared/lyrics_failed 信号的来源。
+    """
+    if platform == "qq":
+        from core.QQmusic.qqmusic_source import QQMusicSource
+        return QQMusicSource()
+    from core.Cloudmusic.netease_source import NeteaseSource
+    return NeteaseSource()
 
 
 class LyricsOverlay(QWidget):
@@ -28,28 +43,39 @@ class LyricsOverlay(QWidget):
     管理歌词状态、动画更新、位置计算以及绘制。
     """
 
-    def __init__(self, lyrics, watcher: CloudMusicWatcher = None):
+    def __init__(self, lyrics, watcher=None, source=None, platform="netease"):
         """
         初始化歌词悬浮窗口。
 
         Args:
             lyrics: 初始歌词列表（通常为空）。
-            watcher: CloudMusicWatcher 实例，若未提供则新建。
+            watcher: 播放监测器实例，若未提供则按平台新建。
+            source: 歌词来源实例，若未提供则按平台新建。
+            platform: 音乐平台，netease 或 qq。
         """
 
         super().__init__()
 
         self.lyrics = lyrics
 
-        self.netease_source = NeteaseSource()
-        self.netease_source.lyrics_ready.connect(self.apply_lyrics)
-        self.netease_source.lyrics_cleared.connect(self.clear_lyrics)
+        # 播放监测器与歌词来源按平台装配
+        if watcher is None:
+            if platform == "qq":
+                from core.QQmusic.qqmusic_watcher import QQMusicWatcher
+                watcher = QQMusicWatcher()
+            else:
+                from core.Cloudmusic.cloudmusic_watcher import CloudMusicWatcher
+                watcher = CloudMusicWatcher()
 
-        self.cloudmusic_watcher = watcher or CloudMusicWatcher()
-        self.netease_source.set_position_provider(self.cloudmusic_watcher.current_position)
-        self.cloudmusic_watcher.track_changed.connect(self.netease_source.handle_track_change)
-        self.cloudmusic_watcher.is_playing_changed.connect(self.apply_playback_status)
-        self.cloudmusic_watcher.position_changed.connect(self.apply_playback_position)
+        self.watcher = watcher
+        self.source = source or create_source(platform)
+
+        self.source.lyrics_ready.connect(self.apply_lyrics)
+        self.source.lyrics_cleared.connect(self.clear_lyrics)
+        self.source.set_position_provider(self.watcher.current_position)
+        self.watcher.track_changed.connect(self.source.handle_track_change)
+        self.watcher.is_playing_changed.connect(self.apply_playback_status)
+        self.watcher.position_changed.connect(self.apply_playback_position)
 
         # 初始状态默认视为播放，实际状态由本地监听回调更新。
         self.is_paused = False

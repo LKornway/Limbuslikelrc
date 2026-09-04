@@ -250,7 +250,7 @@ class NeteaseSource(QObject):
         except Exception as e:
             logger.warning(f"保存歌词缓存失败: {e}")
 
-    def handle_track_change(self, song, artist, track_id_str):
+    def handle_track_change(self, song, artist, track_id_str, album=""):
         """
         处理当前歌曲变化，由 CloudMusicWatcher.track_changed 触发。
 
@@ -258,6 +258,7 @@ class NeteaseSource(QObject):
             song: 歌曲名称。
             artist: 歌手名称。
             track_id_str: 歌曲 ID 字符串。
+            album: 专辑名（与 QQ 监测器统一签名，网易云不使用）。
         """
 
         if not song:

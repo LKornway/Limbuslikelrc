@@ -46,7 +46,7 @@ from PySide6.QtWidgets import (
 from core.logger import get_logger
 logger = get_logger()
 
-from core.cloudmusic_watcher import CloudMusicWatcher
+from core.Cloudmusic.cloudmusic_watcher import CloudMusicWatcher
 from core.settings_store import load_settings, save_settings
 from ui.settings_dialog import SettingsDialog
 
@@ -141,16 +141,18 @@ class MainWindow(QMainWindow):
     MIN_WIDTH = 240
     MIN_HEIGHT = 120
 
-    def __init__(self, watcher: CloudMusicWatcher = None):
+    def __init__(self, watcher=None, platform="netease"):
         """
         初始化主窗口。
 
         Args:
-            watcher: CloudMusicWatcher 实例，若未提供则新建。
+            watcher: 播放监测器实例，若未提供则按平台新建。
+            platform: 音乐平台，netease 或 qq。
         """
 
         super().__init__()
 
+        self._platform = platform
         self._settings = load_settings()
         app_cfg = self._settings["app"]
 
@@ -187,16 +189,32 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._build_tray()
 
-        self.watcher = watcher or CloudMusicWatcher()
+        self.watcher = watcher or self._create_watcher()
         self.watcher.track_changed.connect(self._on_track)
         self.watcher.is_playing_changed.connect(self._on_playing)
         self.watcher.position_changed.connect(self._on_position)
 
+        # QQ 平台：SMTC 封面就绪时刷新封面
+        if hasattr(self.watcher, "cover_changed"):
+            self.watcher.cover_changed.connect(self._on_watcher_cover)
+
         self._apply_hotkeys()
 
+    def _create_watcher(self):
+        """按平台创建播放监测器（watcher 未注入时兜底）。"""
+        if self._platform == "qq":
+            from core.QQmusic.qqmusic_watcher import QQMusicWatcher
+            return QQMusicWatcher()
+        return CloudMusicWatcher()
+
     def _apply_hotkeys(self):
-        """将设置中的热键应用到 CloudMusicController。"""
-        from core.cloudmusic_controller import CloudMusicController
+        """将设置中的热键应用到播放控制器。
+
+        QQ 音乐平台由 SMTC 控制，无需网易云客户端全局热键。
+        """
+        if self._platform == "qq":
+            return
+        from core.Cloudmusic.cloudmusic_controller import CloudMusicController
         app = self._settings["app"]
         CloudMusicController.update_key_map({
             "play_pause": app.get("hotkey_play_pause", ["ctrl", "alt", "p"]),
@@ -512,7 +530,7 @@ class MainWindow(QMainWindow):
                 3000,
             )
 
-    def _on_track(self, song: str, artist: str, track_id_str: str):
+    def _on_track(self, song: str, artist: str, track_id_str: str, album: str = ""):
         """
         处理歌曲切换事件。
 
@@ -520,20 +538,34 @@ class MainWindow(QMainWindow):
             song: 歌曲名称。
             artist: 歌手名称。
             track_id_str: 歌曲 ID 字符串。
+            album: 专辑名（QQ 平台用于展示，网易云为空）。
         """
 
         logger.info(f"收到歌曲变化：{song} - {artist}")
         self._song = song
         self._artist = artist
         self._duration = 0.0
-        self._song_key = f"{song}|{artist}"
+        self._song_key = f"{song}|{artist}|{album}"
         self.song_label.setText(song or "未在播放")
         self.artist_label.setText(artist or "—")
         self.cover_label.setText("加载中…")
         self.cover_label.setPixmap(QPixmap())
+
+        if self._platform == "qq":
+            # QQ 平台：时长来自 SMTC，封面由 SMTC 缩略图提供
+            if hasattr(self.watcher, "current_duration"):
+                self._duration = max(0.0, float(self.watcher.current_duration() or 0.0))
+            self.status_label.setText("正在获取歌词…")
+            self._update_progress_ui()
+            return
+
         logger.info("开始获取歌曲时长和专辑封面")
         self._fetch_meta_async(song, artist, track_id_str, self._song_key)
         self.status_label.setText("正在获取歌词…")
+
+    def _on_watcher_cover(self, raw: bytes):
+        """QQ 平台 SMTC 封面就绪时刷新封面（含自动主题色）。"""
+        self._on_cover_bytes(raw, self._song_key)
 
     def _on_playing(self, playing: bool):
         """处理播放/暂停状态变化，更新托盘提示和按钮图标。"""
@@ -544,6 +576,12 @@ class MainWindow(QMainWindow):
 
     def _on_position(self, position: float):
         self._position = max(0.0, float(position))
+
+        # QQ 平台：时长来自 SMTC，可能略晚于进度到达，先补一次
+        if self._platform == "qq" and self._duration <= 0:
+            if hasattr(self.watcher, "current_duration"):
+                self._duration = max(0.0, float(self.watcher.current_duration() or 0.0))
+
         self._update_progress_ui()
 
     def _update_progress_ui(self):
@@ -562,7 +600,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText(text)
 
     def on_lyrics_failed(self, song: str, artist: str):
-        """NeteaseSource 通知歌词获取失败时调用。"""
+        """歌词来源通知获取失败时调用。"""
         self.status_label.setText("歌词获取失败")
 
 
@@ -737,18 +775,27 @@ class MainWindow(QMainWindow):
         save_settings(self._settings["app"])
 
     def _on_play_pause_clicked(self):
-        """播放/暂停按钮点击"""
-        from core.cloudmusic_controller import CloudMusicController
+        """播放/暂停按钮点击（按平台分发，QQ 走 SMTC 控制）"""
+        if self._platform == "qq" and hasattr(self.watcher, "play_pause"):
+            self.watcher.play_pause()
+            return
+        from core.Cloudmusic.cloudmusic_controller import CloudMusicController
         CloudMusicController.play_pause()
 
     def _on_next_clicked(self):
-        """下一首按钮点击"""
-        from core.cloudmusic_controller import CloudMusicController
+        """下一首按钮点击（按平台分发，QQ 走 SMTC 控制）"""
+        if self._platform == "qq" and hasattr(self.watcher, "next_track"):
+            self.watcher.next_track()
+            return
+        from core.Cloudmusic.cloudmusic_controller import CloudMusicController
         CloudMusicController.next_track()
 
     def _on_previous_clicked(self):
-        """上一首按钮点击"""
-        from core.cloudmusic_controller import CloudMusicController
+        """上一首按钮点击（按平台分发，QQ 走 SMTC 控制）"""
+        if self._platform == "qq" and hasattr(self.watcher, "previous_track"):
+            self.watcher.previous_track()
+            return
+        from core.Cloudmusic.cloudmusic_controller import CloudMusicController
         CloudMusicController.previous_track()
 
     def closeEvent(self, event):

@@ -14,40 +14,58 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog
 from core.logger import setup_logging
 setup_logging()
 
-from core.cloudmusic_watcher import CloudMusicWatcher
 from core.settings_store import load_settings
 from core.updater import UpdateChecker, Downloader, install_update, GITHUB_API_URL
 from ui.main_window import MainWindow
 from ui.overlay import LyricsOverlay
 
 
+def create_watcher(platform):
+    """
+    按音乐平台创建播放监测器。
+
+    Args:
+        platform: "netease" 或 "qq"。
+
+    Returns:
+        QObject: 具备 track_changed/is_playing_changed/position_changed 信号。
+    """
+    if platform == "qq":
+        from core.QQmusic.qqmusic_watcher import QQMusicWatcher
+        return QQMusicWatcher()
+    from core.Cloudmusic.cloudmusic_watcher import CloudMusicWatcher
+    return CloudMusicWatcher()
+
+
 def main():
     """启动主界面与歌词悬浮窗口。
 
-    加载用户设置，创建 Qt 应用，初始化唯一的 CloudMusicWatcher 实例，
+    加载用户设置，创建 Qt 应用，按所选音乐平台初始化唯一的播放监测器，
     并构建主窗口与歌词悬浮层。连接信号后进入事件循环。
     """
 
-    load_settings()
+    settings = load_settings()
+    platform = settings["app"].get("music_platform", "netease")
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    # 创建唯一的 CloudMusicWatcher 实例
-    watcher = CloudMusicWatcher()
+    # 创建所选平台的播放监测器实例
+    watcher = create_watcher(platform)
 
-    main_window = MainWindow(watcher)
-    overlay = LyricsOverlay([], watcher)
+    main_window = MainWindow(watcher, platform)
+    overlay = LyricsOverlay([], watcher, platform=platform)
 
     main_window.overlay = overlay
 
     # 连接歌词信号
-    overlay.netease_source.lyrics_ready.connect(
+    overlay.source.lyrics_ready.connect(
         lambda *args: main_window.set_lyric_status("")
     )
-    overlay.netease_source.lyrics_failed.connect(
+    overlay.source.lyrics_failed.connect(
         main_window.on_lyrics_failed
     )
-    overlay.netease_source.lyrics_cleared.connect(
+    overlay.source.lyrics_cleared.connect(
         lambda: main_window.set_lyric_status("")
     )
 

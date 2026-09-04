@@ -234,6 +234,15 @@ class SettingsDialog(QDialog):
         app_box = QGroupBox("应用")
         app_form = QFormLayout(app_box)
 
+        # 音乐平台（切换后重启程序生效）
+        self.platform_combo = QComboBox()
+        self.platform_combo.addItem("网易云音乐", "netease")
+        self.platform_combo.addItem("QQ 音乐", "qq")
+        current_platform = self._app_settings.get("music_platform", "netease")
+        platform_index = self.platform_combo.findData(current_platform)
+        self.platform_combo.setCurrentIndex(max(0, platform_index))
+        app_form.addRow("音乐平台（重启生效）", self.platform_combo)
+
         self.tray_combo = QComboBox()
         self.tray_combo.addItem("每次询问", None)
         self.tray_combo.addItem("关闭时最小化到托盘", True)
@@ -415,6 +424,7 @@ class SettingsDialog(QDialog):
             )
 
         self._app_settings["minimize_to_tray_on_close"] = self.tray_combo.currentData()
+        self._app_settings["music_platform"] = self.platform_combo.currentData()
 
         for key, editor in self._hotkey_editors.items():
             self._app_settings[key] = editor.keys
