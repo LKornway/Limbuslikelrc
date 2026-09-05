@@ -1,5 +1,7 @@
 # Limbuslikelrc
 
+[中文](README.md) | [English](README_en.md)
+
 A desktop floating lyrics overlay inspired by the style of Limbus Company, supporting NetEase Cloud Music, QQ Music, and Kugou Music.
 
 Automatically detect the currently playing song and progress → fetch lyrics → display them on a full-screen transparent overlay with per-character reveal, jitter, outline, and random tilt animations.
