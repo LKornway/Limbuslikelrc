@@ -1,5 +1,7 @@
 # Limbuslikelrc
 
+[中文](README.md) | [English](README_en.md)
+
 受 **Limbus Company** 风格启发的桌面歌词悬浮窗，支持 **网易云音乐 / QQ 音乐 / 酷狗音乐** 三大平台。
 
 自动识别当前播放歌曲与进度 → 获取歌词 → 以逐字出现、抖动、描边、随机倾斜的方式显示在全屏透明悬浮层上。
