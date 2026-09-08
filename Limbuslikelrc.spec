@@ -1,10 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import certifi
+
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets', 'assets')],
+    datas=[
+        ('assets', 'assets'),
+        # 修改版网易云监听库（含 GBK 解码修复与 Store 版兼容），
+        # 运行时经 core/Cloudmusic 内的相对路径引用
+        ('libs/cloudmusic_detector', 'libs/cloudmusic_detector'),
+        # TLS CA 证书：requests 默认从 certifi 加载，
+        # 显式收集避免 onefile 解压后找不到 cacert.pem
+        (certifi.where(), 'certifi'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

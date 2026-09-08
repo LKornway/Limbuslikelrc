@@ -11,6 +11,7 @@ QQ 音乐歌词来源模块。
 专辑信息来自 SMTC，可把搜索结果精确收敛到当前播放的版本。
 """
 
+import json
 import re
 import threading
 import urllib.parse
@@ -33,7 +34,11 @@ QQ_HEADERS = {
     "Referer": "https://y.qq.com/",
 }
 
-SEARCH_API = "https://c.y.qq.com/soso/fcgi-bin/client_search_cp"
+# 搜索接口按可用性依次降级（c.y.qq.com 偶发 HTTP 500，i.y.qq.com 更稳）
+SEARCH_APIS = [
+    "https://i.y.qq.com/soso/fcgi-bin/search_for_qq_cp",
+    "https://c.y.qq.com/soso/fcgi-bin/client_search_cp",
+]
 LYRIC_API = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg"
 
 
@@ -41,13 +46,14 @@ def _http_get_json(url):
     """GET 并解析 JSON。"""
     req = urllib.request.Request(url, headers=QQ_HEADERS)
     with urllib.request.urlopen(req, timeout=8) as resp:
-        return __import__("json").loads(resp.read().decode("utf-8", "ignore"))
+        return json.loads(resp.read().decode("utf-8", "ignore"))
 
 
 def _search_songmid(song, artist, album=""):
     """
     搜索歌曲并返回 songmid。
 
+    按顺序尝试多个搜索接口（接口偶发 500 时自动降级）；
     优先用专辑名收敛同名版本：
     1. 专辑名完全一致（忽略大小写/空格）的候选中取第一个；
     2. 找不到完全一致时取专辑名包含匹配；
@@ -58,39 +64,42 @@ def _search_songmid(song, artist, album=""):
     """
 
     def norm(s):
-        return re.sub(r"\s+", "", (s or "").lower())
+        return re.sub(r"\s+", "", (s or "")).lower()
+
+    def pick(songs):
+        norm_album = norm(album)
+        for s in songs:
+            if norm_album and norm(s.get("albumname")) == norm_album:
+                return s.get("songmid")
+        for s in songs:
+            if norm_album and norm_album in norm(s.get("albumname")):
+                return s.get("songmid")
+        if songs and not norm_album:
+            return songs[0].get("songmid")
+        if songs:
+            logger.warning(f"未按专辑确认版本，退回搜索结果：{song} - {artist}")
+        return songs[0].get("songmid") if songs else None
 
     keyword = f"{artist} {song}".strip()
-    url = SEARCH_API + "?" + urllib.parse.urlencode(
-        {"p": 1, "n": 10, "w": keyword, "format": "json", "cr": 1}
-    )
-    try:
-        data = _http_get_json(url)
-        songs = data["data"]["song"]["list"]
-    except Exception as exc:
-        logger.warning(f"QQ 搜索失败：{exc}")
-        return None
+    params = {"w": keyword, "format": "json", "n": 10}
 
-    norm_album = norm(album)
+    for api in SEARCH_APIS:
+        try:
+            url = api + "?" + urllib.parse.urlencode(params)
+            data = _http_get_json(url)
+            songs = data["data"]["song"]["list"]
+            songmid = pick(songs)
+            if songmid:
+                return songmid
+            if songs:
+                logger.warning(f"搜索无可用结果：{keyword}")
+                return None
+        except Exception as exc:
+            logger.warning(f"QQ 搜索接口失败（{api}）：{exc}")
+            continue
 
-    # 1. 专辑完全一致
-    for s in songs:
-        if norm_album and norm(s.get("albumname")) == norm_album:
-            return s.get("songmid")
-
-    # 2. 专辑包含匹配（互为子串）
-    for s in songs:
-        if norm_album and norm_album in norm(s.get("albumname")):
-            return s.get("songmid")
-
-    # 3. 兜底取第一条
-    if songs and not norm_album:
-        return songs[0].get("songmid")
-
-    if songs:
-        logger.warning(f"未按专辑确认版本，退回搜索结果：{song} - {artist}")
-
-    return songs[0].get("songmid") if songs else None
+    logger.warning(f"全部搜索接口不可用：{keyword}")
+    return None
 
 
 def _fetch_lrc(songmid):
@@ -159,6 +168,10 @@ class QQMusicSource(QObject):
         cache_dir.mkdir(parents=True, exist_ok=True)
         self._cache_dir = cache_dir
 
+        # songmid 记忆上限（防文件无限增长）
+        self._mid_memory_limit = 300
+        self._mid_memory_file = self._cache_dir / "qq_songmid.json"
+
     def set_position_provider(self, provider):
         """
         设置当前播放进度的读取函数。
@@ -168,6 +181,37 @@ class QQMusicSource(QObject):
         """
 
         self._position_provider = provider
+
+    @staticmethod
+    def _song_mid_key(song, artist, album=""):
+        """歌曲的 songmid 记忆键。"""
+        return re.sub(r"\s+", "", f"{artist or ''}|{song or ''}|{album or ''}").lower()
+
+    def _remembered_mid(self, song, artist, album=""):
+        """从本地记忆读取已解析过的 songmid（重播免搜索）。"""
+        try:
+            data = json.loads(self._mid_memory_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return data.get(self._song_mid_key(song, artist, album))
+
+    def _remember_mid(self, song, artist, album="", songmid=""):
+        """保存 songmid 到本地记忆。"""
+        if not songmid:
+            return
+        try:
+            data = {}
+            if self._mid_memory_file.exists():
+                data = json.loads(self._mid_memory_file.read_text(encoding="utf-8"))
+            data[self._song_mid_key(song, artist, album)] = songmid
+            # 超出上限时丢弃最早的条目
+            while len(data) > self._mid_memory_limit:
+                data.pop(next(iter(data)))
+            self._mid_memory_file.write_text(
+                json.dumps(data, ensure_ascii=False, indent=0), encoding="utf-8"
+            )
+        except OSError as exc:
+            logger.warning(f"songmid 记忆保存失败：{exc}")
 
     def handle_track_change(self, song, artist, track_id_str="", album=""):
         """
@@ -221,10 +265,16 @@ class QQMusicSource(QObject):
         def worker():
             lrc = None
 
-            # 1. 解析 songmid（优先用 SMTC 专辑信息收敛版本）
-            songmid = track_id_str if track_id_str else _search_songmid(
-                song, artist, album
-            )
+            # 1. 解析 songmid：优先记忆（免搜索）→ 在线搜索（多接口降级）
+            songmid = track_id_str
+            if not songmid:
+                songmid = self._remembered_mid(song, artist, album)
+                if songmid:
+                    logger.info(f"命中 songmid 记忆：{songmid}")
+            if not songmid:
+                songmid = _search_songmid(song, artist, album)
+                if songmid:
+                    self._remember_mid(song, artist, album, songmid)
             if not songmid:
                 logger.warning(f"无法解析 songmid：{song} - {artist}")
                 self.bridge.result.emit(song, artist or "", "", "error")

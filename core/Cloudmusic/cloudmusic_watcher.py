@@ -9,7 +9,8 @@
 import threading
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'libs'))
+# 本模块位于 core/Cloudmusic/，libs 在项目根下（上两级）
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'libs'))
 
 from PySide6.QtCore import QObject, QTimer, Signal
 from cloudmusic_detector import CloudMusic
