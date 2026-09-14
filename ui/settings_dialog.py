@@ -171,6 +171,20 @@ class SettingsDialog(QDialog):
     应用设置窗口。
     """
 
+    # 各平台在设置页显示的限制提示
+    KUGOU_HINT = (
+        "酷狗音乐：托盘运行可能不稳定，建议小窗运行\n"
+        "无法获取播放进度与歌曲总时长，\n"
+        "歌词自切歌起按本地时钟从头展示\n"
+        "（暂停/继续与真实进度不可感知）；支持本地专辑封面。"
+    )
+
+    QQ_HINT = (
+        "QQ 音乐：官方翻译歌词需登录态，本程序无法获取。\n"
+        "双语字幕改用跨源译文兜底（同名歌曲译文 + 原文与时间轴双重校验），\n"
+        "校验未通过或冷门歌曲可能没有翻译，此时仅显示原文。"
+    )
+
     def __init__(self, app_settings: dict, parent=None):
         """
         构建设置对话框。
@@ -244,13 +258,8 @@ class SettingsDialog(QDialog):
         self.platform_combo.setCurrentIndex(max(0, platform_index))
         app_form.addRow("音乐平台（重启生效）", self.platform_combo)
 
-        # 酷狗平台限制提示
-        self.platform_hint = QLabel(
-            "酷狗音乐：托盘运行可能不稳定，建议小窗运行\n"
-            "无法获取播放进度与歌曲总时长，\n"
-            "歌词自切歌起按本地时钟从头展示\n"
-            "（暂停/继续与真实进度不可感知）；支持本地专辑封面。"
-        )
+        # 平台限制提示（按所选平台切换文案）
+        self.platform_hint = QLabel(self.KUGOU_HINT)
         self.platform_hint.setWordWrap(True)
         self.platform_hint.setStyleSheet("color: #b0a080; font-size: 11px;")
         app_form.addRow("", self.platform_hint)
@@ -474,9 +483,11 @@ class SettingsDialog(QDialog):
         QDesktopServices.openUrl(QUrl(GITHUB_URL))
 
     def _on_platform_changed(self):
-        """平台选择变化时更新提示，并在首次选择酷狗时说明限制。"""
+        """平台选择变化时更新提示，并就所选平台的限制给出说明。"""
         self._update_platform_hint()
-        if self.platform_combo.currentData() == "kugou":
+        platform = self.platform_combo.currentData()
+
+        if platform == "kugou":
             QMessageBox.information(
                 self,
                 "酷狗音乐限制",
@@ -490,10 +501,32 @@ class SettingsDialog(QDialog):
                 "切换平台后需重启程序生效。",
             )
 
+        elif platform == "qq":
+            QMessageBox.information(
+                self,
+                "QQ 音乐双语字幕说明",
+                "QQ 音乐官方翻译歌词需要登录态，本程序无法获取。\n\n"
+                "选择 QQ 音乐时，双语字幕将使用跨源译文兜底：\n"
+                "· 仅当同名歌曲的原文重合率 ≥60% 且时间轴偏差中位数 ≤0.6 秒时"
+                "才采用该译文；\n"
+                "· 校验未通过或冷门歌曲可能没有译文，此时只显示原文；\n"
+                "· 首次播放会额外查询一次译文，之后从缓存读取。\n\n"
+                "其余功能（切歌、进度、封面、歌词）不受影响。\n"
+                "切换平台后需重启程序生效。",
+            )
+
     def _update_platform_hint(self):
-        """按当前平台显示/隐藏限制提示。"""
-        is_kugou = self.platform_combo.currentData() == "kugou"
-        self.platform_hint.setVisible(is_kugou)
+        """按当前平台切换限制提示文案。"""
+        platform = self.platform_combo.currentData()
+
+        if platform == "kugou":
+            self.platform_hint.setText(self.KUGOU_HINT)
+            self.platform_hint.setVisible(True)
+        elif platform == "qq":
+            self.platform_hint.setText(self.QQ_HINT)
+            self.platform_hint.setVisible(True)
+        else:
+            self.platform_hint.setVisible(False)
 
     def _clear_cache(self):
         """清除歌词缓存文件。"""

@@ -5,9 +5,13 @@ LRC歌词解析模块。
 并转换为程序内部使用的歌词数据结构。
 """
 
+import bisect
 import re
 
 from core.models import LRCLine
+
+# 翻译与原文配对的时间容差（秒）：跨源译文可能存在毫秒级偏差
+_TRANS_TIME_TOLERANCE = 0.5
 
 # 常见非歌词元信息行：作词/作曲/编曲等。
 # 中文署名须以 "词：" 等冒号形式出现，避免误伤 "词穷/曲终" 类真实歌词；
@@ -137,8 +141,8 @@ def _merge_translation(lines, trans_lines):
     """
     按时间戳把翻译歌词合并到原文行。
 
-    网易云的 tlyric 与原文时间戳一一对应（毫秒级一致），
-    这里以 0.01 秒精度做键匹配，匹配不到的翻译行直接忽略。
+    优先按 0.01 秒精度精确匹配；跨源译文（QQ 使用网易云译文时）
+    时间戳可能存在毫秒级差异，因此在容差范围内取最近的一行。
 
     Args:
         lines: 原文歌词行列表（原地修改）。
@@ -148,11 +152,19 @@ def _merge_translation(lines, trans_lines):
     if not lines or not trans_lines:
         return
 
-    index = {}
-    for line in lines:
-        index.setdefault(round(line.timestamp, 2), line)
+    ordered = sorted(lines, key=lambda item: item.timestamp)
+    times = [line.timestamp for line in ordered]
 
     for trans in trans_lines:
-        target = index.get(round(trans.timestamp, 2))
-        if target is not None and not target.trans:
-            target.trans = trans.text
+        pos = bisect.bisect_left(times, trans.timestamp)
+
+        best = None
+        for index in (pos - 1, pos, pos + 1):
+            if 0 <= index < len(ordered):
+                diff = abs(ordered[index].timestamp - trans.timestamp)
+                if best is None or diff < best[0]:
+                    best = (diff, ordered[index])
+
+        if best is not None and best[0] <= _TRANS_TIME_TOLERANCE:
+            if not best[1].trans:
+                best[1].trans = trans.text

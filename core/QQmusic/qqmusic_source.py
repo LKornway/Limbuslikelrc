@@ -116,10 +116,90 @@ def _fetch_lrc(songmid):
         return None
 
 
-class QQMusicBridge(QObject):
-    """QQ 音乐歌词请求结果的信号桥接。"""
+def _normalize_lyric(text):
+    """归一化歌词文本，用于跨源比对（忽略空白与标点、统一小写）。"""
+    return re.sub(r"[\W_]+", "", text or "", flags=re.UNICODE).lower()
 
-    result = Signal(str, str, str, str)
+
+def _lyrics_match(lrc_a, lrc_b, min_ratio=0.6, max_median_diff=0.6):
+    """
+    校验两段歌词是否属于同一版本。
+
+    同时比较文本重合率与公共行的时间戳偏差：
+    只有原文一致（避免错配到别的版本）且时间轴一致（避免译文错位）才通过。
+
+    Args:
+        lrc_a: 第一段歌词文本。
+        lrc_b: 第二段歌词文本。
+        min_ratio: 文本重合率下限。
+        max_median_diff: 公共行时间戳偏差中位数上限（秒）。
+
+    Returns:
+        bool: 是否视为同一版本。
+    """
+
+    def build(lrc_text):
+        table = {}
+        for line in parse_lrc_text(lrc_text):
+            key = _normalize_lyric(line.text)
+            if len(key) > 3:
+                table.setdefault(key, line.timestamp)
+        return table
+
+    table_a = build(lrc_a)
+    table_b = build(lrc_b)
+    if not table_a or not table_b:
+        return False
+
+    common = [key for key in table_a if key in table_b]
+    if not common:
+        return False
+
+    ratio = len(common) / max(1, min(len(table_a), len(table_b)))
+    diffs = sorted(abs(table_a[key] - table_b[key]) for key in common)
+    median = diffs[len(diffs) // 2]
+
+    return ratio >= min_ratio and median <= max_median_diff
+
+
+def _fallback_translation(song, artist, lrc_text):
+    """
+    QQ 匿名接口不下发翻译歌词，改用同名歌曲的网易云译文兜底。
+
+    仅当两版原文高度一致（文本重合 + 时间轴一致）时采用，否则返回空串。
+
+    Args:
+        song: 歌曲名称。
+        artist: 歌手名称。
+        lrc_text: QQ 侧原文歌词文本（用于校验）。
+
+    Returns:
+        str: 翻译歌词文本（LRC 格式，无可用译文返回空串）。
+    """
+
+    from core.Cloudmusic.netease_source import NetEaseMusic
+
+    other_lrc, other_trans = NetEaseMusic.fetch_lyrics(song, artist)
+
+    if not other_lrc or not other_trans:
+        return ""
+
+    if not _lyrics_match(lrc_text, other_lrc):
+        logger.info(f"跨源翻译未通过校验（原文或时间轴不一致）：{song} - {artist}")
+        return ""
+
+    logger.info(f"采用跨源译文（网易云）：{song} - {artist}")
+    return other_trans
+
+
+class QQMusicBridge(QObject):
+    """
+    QQ 音乐歌词请求结果的信号桥接。
+
+    参数：歌曲、歌手、歌词文本、状态、翻译歌词文本。
+    """
+
+    result = Signal(str, str, str, str, str)
 
 
 class QQMusicSource(QObject):
@@ -264,6 +344,7 @@ class QQMusicSource(QObject):
 
         def worker():
             lrc = None
+            trans = ""
 
             # 1. 解析 songmid：优先记忆（免搜索）→ 在线搜索（多接口降级）
             songmid = track_id_str
@@ -277,13 +358,14 @@ class QQMusicSource(QObject):
                     self._remember_mid(song, artist, album, songmid)
             if not songmid:
                 logger.warning(f"无法解析 songmid：{song} - {artist}")
-                self.bridge.result.emit(song, artist or "", "", "error")
+                self.bridge.result.emit(song, artist or "", "", "error", "")
                 return
             self._current_songmid = songmid
             logger.info(f"解析 songmid={songmid}")
 
             # 2. 先尝试读取缓存
             lrc = self._get_cached_lyrics(songmid)
+            trans = self._get_cached_trans(songmid)
 
             # 3. 缓存未命中则请求网络
             if not lrc:
@@ -291,17 +373,24 @@ class QQMusicSource(QObject):
                 if lrc:
                     self._save_cached_lyrics(songmid, lrc)
 
-            # 4. 发送结果
+            # 4. 翻译歌词：QQ 匿名接口不下发，本地缓存缺失时用跨源译文兜底
+            if lrc and not trans:
+                trans = _fallback_translation(song, artist, lrc)
+                if trans:
+                    self._save_cached_trans(songmid, trans)
+
+            # 5. 发送结果
             self.bridge.result.emit(
                 song,
                 artist or "",
                 lrc or "",
                 "ok" if lrc else "error",
+                trans or "",
             )
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_fetch_done(self, song, artist, lrc_text, status):
+    def _on_fetch_done(self, song, artist, lrc_text, status, trans_text=""):
         """
         处理后台歌词请求结果。
 
@@ -310,6 +399,7 @@ class QQMusicSource(QObject):
             artist: 歌手名称。
             lrc_text: LRC 歌词文本。
             status: 请求结果状态，'ok' 或 'error'。
+            trans_text: 翻译歌词文本（LRC 格式，可为空）。
         """
 
         self.fetching = False
@@ -329,7 +419,7 @@ class QQMusicSource(QObject):
             self.lyrics_failed.emit(song, artist or "")
             return
 
-        lyrics = parse_lrc_text(lrc_text)
+        lyrics = parse_lrc_text(lrc_text, trans_text)
 
         if not lyrics:
             logger.info(f"LRC 解析失败：{song} - {artist}")
@@ -374,3 +464,27 @@ class QQMusicSource(QObject):
             logger.info(f"歌词缓存已保存: {songmid}")
         except Exception as exc:
             logger.warning(f"保存歌词缓存失败: {exc}")
+
+    def _get_cached_trans(self, songmid):
+        """从缓存读取翻译歌词（无缓存返回空串）。"""
+        if not songmid:
+            return ""
+        cache_file = self._cache_dir / f"{songmid}.tlyric.lrc"
+        if cache_file.exists():
+            try:
+                return cache_file.read_text(encoding="utf-8")
+            except OSError:
+                return ""
+        return ""
+
+    def _save_cached_trans(self, songmid, trans_text):
+        """保存翻译歌词到缓存。"""
+        if not songmid or not trans_text:
+            return
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = self._cache_dir / f"{songmid}.tlyric.lrc"
+        try:
+            cache_file.write_text(trans_text, encoding="utf-8")
+            logger.info(f"翻译歌词缓存已保存: {songmid}")
+        except OSError as exc:
+            logger.warning(f"保存翻译歌词缓存失败: {exc}")

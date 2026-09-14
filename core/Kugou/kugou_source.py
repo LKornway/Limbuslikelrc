@@ -153,9 +153,13 @@ def _fetch_krc_online(song_hash):
 
 
 class KugouBridge(QObject):
-    """酷狗音乐歌词请求结果的信号桥接。"""
+    """
+    酷狗音乐歌词请求结果的信号桥接。
 
-    result = Signal(str, str, str, str)
+    参数：歌曲、歌手、歌词文本、状态、翻译歌词文本。
+    """
+
+    result = Signal(str, str, str, str, str)
 
 
 class KugouSource(QObject):
@@ -259,13 +263,19 @@ class KugouSource(QObject):
                     self._emit_cover(song, artist, album_info)
                     return
 
-            self.bridge.result.emit(song, artist or "", "", "error")
+            self.bridge.result.emit(song, artist or "", "", "error", "")
 
         threading.Thread(target=worker, daemon=True).start()
 
     def _emit_lyrics_ok(self, song, artist, lines):
-        """把歌词结果送入统一桥接（经 LRC 序列化）。"""
-        self.bridge.result.emit(song, artist or "", _serialize_lines(lines), "ok")
+        """把歌词结果送入统一桥接（原文与翻译分别序列化，按时间戳配对）。"""
+        self.bridge.result.emit(
+            song,
+            artist or "",
+            _serialize_lines(lines),
+            "ok",
+            _serialize_lines(lines, use_trans=True),
+        )
 
     def _emit_cover(self, song, artist, album_info):
         """从本地封面缓存读取专辑图并发出封面信号。"""
@@ -283,8 +293,17 @@ class KugouSource(QObject):
         except Exception as exc:
             logger.warning(f"封面读取失败：{exc}")
 
-    def _on_fetch_done(self, song, artist, lrc_text, status):
-        """处理后台歌词请求结果。"""
+    def _on_fetch_done(self, song, artist, lrc_text, status, trans_text=""):
+        """
+        处理后台歌词请求结果。
+
+        Args:
+            song: 歌曲名称。
+            artist: 歌手名称。
+            lrc_text: LRC 歌词文本。
+            status: 请求结果状态，'ok' 或 'error'。
+            trans_text: 翻译歌词文本（LRC 格式，可为空）。
+        """
 
         self.fetching = False
 
@@ -298,7 +317,7 @@ class KugouSource(QObject):
             self.lyrics_failed.emit(song, artist or "")
             return
 
-        lyrics = parse_lrc_text(lrc_text)
+        lyrics = parse_lrc_text(lrc_text, trans_text)
 
         if not lyrics:
             logger.info(f"LRC 解析失败：{song} - {artist}")
@@ -321,11 +340,24 @@ class KugouSource(QObject):
         self.lyrics_ready.emit(lyrics, start_offset, song, artist)
 
 
-def _serialize_lines(lines):
-    """把 KRC 解析出的行序列化为 LRC 文本（供统一歌词管线解析）。"""
+def _serialize_lines(lines, use_trans=False):
+    """
+    把 KRC 解析出的行序列化为 LRC 文本（供统一歌词管线解析）。
+
+    Args:
+        lines: KRC 解析出的歌词行。
+        use_trans: 为 True 时序列化翻译文本（沿用原文行时间戳，
+                   使翻译与原文在统一管线中按时间戳配对）。
+
+    Returns:
+        str: LRC 文本。
+    """
     parts = []
     for line in lines:
+        text = line.trans if use_trans else line.text
+        if not text:
+            continue
         minutes = int(line.timestamp // 60)
         seconds = line.timestamp - minutes * 60
-        parts.append(f"[{minutes:02d}:{seconds:05.2f}]{line.text}")
+        parts.append(f"[{minutes:02d}:{seconds:05.2f}]{text}")
     return "\n".join(parts)

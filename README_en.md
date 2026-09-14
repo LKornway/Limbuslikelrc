@@ -20,6 +20,10 @@ Automatically detect the currently playing song and progress → fetch lyrics �
   - Kugou Music: window title + local lyric cache (`.krc`), album art taken from local cache
 - **Real-time listening for play/pause and progress** (NetEase / QQ), supports mid-play startup and seeking
 - Automatically fetch and parse lyrics: LRC and Kugou KRC (including per-character timing), filters meta-information like "lyrics/composer/Lyrics by" and leading title lines like "Song - Artist"
+- **Bilingual lyrics**: choose "Original / Translation / Bilingual" in settings; in bilingual mode the original and its translation are shown in the same block as two lines (same font size and style), and the translation is revealed character by character in sync with the original (the i-th character appears at the same time); when the original wraps, the translation shifts down accordingly
+  - NetEase Cloud Music: official translation lyrics (`tlyric`)
+  - Kugou Music: multi-language lyrics embedded in the KRC file (`[language]`, matched by line order)
+  - QQ Music: the anonymous API does not return translations, so a **cross-source fallback** is used (translation of the same song, validated against both the original text and the timeline; no translation is shown when validation fails)
 - **Lyrics caching**: lyrics played before are automatically cached locally and can be displayed offline (Kugou directly reuses its local KRC cache)
 - Full-screen per-character reveal, jitter, outline, and random tilt animation
 - **Automatic theme colors**: extract primary and contrast colors from album art and apply them to lyric text and outline
@@ -62,6 +66,7 @@ python main.py
 ## Configuration
 
 - Visual settings: click the "Settings" button at the bottom-right of the main window to adjust **music platform**, lyric appearance, animation parameters, close behavior, etc.; all changes take effect immediately and persist.
+- Lyrics display: choose "Original + translation (bilingual)" / "Original only" / "Translation only"; bilingual mode shows the translation under the original line with identical styling (default: bilingual).
 - Hotkey customization: in the settings dialog click the hotkey input box and press the new combination to record it (must include at least one modifier: Ctrl/Alt/Shift). Hotkeys apply only to NetEase Cloud Music.
 - Manual config file: `config.py` provides default values; settings modified via the UI will override these and are saved to `%APPDATA%\Limbuslikelrc\settings.json`.
 - Common parameters:
@@ -108,22 +113,27 @@ Limbuslikelrc/
 
 ## How Each Platform Works
 
-| Platform | Song / Track Change Detection | Playback Progress | Lyrics | Cover Art |
-|---|---:|---:|---|---|
-| NetEase Cloud Music | Parse local `cloudmusic.elog` (auto-detect desktop/Store paths) | Realtime progress from log (supports seeking / mid-play start) | NetEase LRC API + local cache | NetEase cover art flow |
-| QQ Music | SMTC session (title/artist/album; album used for same-name disambiguation) | Realtime progress via SMTC | `lyric_new` API + local cache (keyed by songmid) | SMTC cover art stream |
-| Kugou Music | Main window title "Artist - Song - Kugou Music" (works with various window sizes) | Local clock accumulation from song-change time (see limitations) | Local `.krc` decryption / online lyric API (hash key) | Local cover art cache |
+| Platform | Song / Track Change Detection | Playback Progress | Lyrics | Translation (bilingual) | Cover Art |
+|---|---|---|---|---|---|
+| NetEase Cloud Music | Parse local `cloudmusic.elog` (auto-detect desktop/Store paths) | Realtime progress from log (supports seeking / mid-play start) | NetEase LRC API + local cache | Official `tlyric` (matched by timestamp, 100% aligned) | NetEase cover art flow |
+| QQ Music | SMTC session (title/artist/album; album used for same-name disambiguation) | Realtime progress via SMTC | `lyric_new` API + local cache (keyed by songmid) | Cross-source fallback: translation of the same song, validated against original text + timeline | SMTC cover art stream |
+| Kugou Music | Main window title "Artist - Song - Kugou Music" (works with various window sizes) | Local clock accumulation from song-change time (see limitations) | Local `.krc` decryption / online lyric API (hash key) | Embedded `[language]` data in the KRC file (matched by line order) | Local cover art cache |
+
+Translation pairing: NetEase pairs precisely by timestamp; Kugou maps by line order and converts to the original timestamps (±0.5 s tolerance); QQ cross-source translations are paired by timestamp with the same tolerance.
 
 ## Known Limitations
 
 - Windows only.
 - **NetEase**: depends on local `cloudmusic.elog`; if the client hasn't been run or the version differs significantly, detection may fail.
-- **QQ Music**: SMTC doesn't provide a global song ID; disambiguation uses album name and may mismatch when album metadata is missing.
+- **QQ Music**:
+  - SMTC doesn't provide a global song ID; disambiguation uses album name and may mismatch when album metadata is missing.
+  - Official translation lyrics require a logged-in session, so the program falls back to cross-source translations: they are used only when the original text overlap is ≥60% and the median timestamp deviation is ≤0.6 s. Some less popular songs may therefore have no translation (only the original is shown).
 - **Kugou Music**:
   - The client does not provide playback progress, and the UI progress is not reliably detectable; progress is accumulated from the local clock starting at song-change time and cannot detect pause/resume, causing drift over long play sessions.
   - Cannot display total song duration (progress bar shows `--:--`).
   - Cannot run in tray for stable progress detection (this program does not require Kugou to run in tray, but detection relies on title polling).
-- Online lyric fetching (when not found in local caches) requires a network connection.
+  - Translations come from the embedded `[language]` field, which covers only part of the lines for some songs (lines without a translation show no translation).
+- Online lyric fetching (when not found in local caches) and QQ cross-source translation lookups require a network connection.
 
 ## License
 
