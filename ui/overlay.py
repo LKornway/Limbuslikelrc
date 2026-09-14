@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 
 import config
 from core.models import CharacterState, LyricObject
+from core.settings_store import load_settings
 from core.logger import get_logger
 logger = get_logger()
 
@@ -81,6 +82,15 @@ class LyricsOverlay(QWidget):
 
         self.lyrics = lyrics
 
+        # 歌词显示模式：original（仅原文）/ translation（仅翻译）/ both（双语）
+        try:
+            self.display_mode = load_settings()["app"].get(
+                "lyric_display_mode", "both"
+            )
+        except Exception as exc:
+            logger.warning(f"读取歌词显示模式失败，使用默认双语：{exc}")
+            self.display_mode = "both"
+
         # 播放监测器与歌词来源按平台装配
         if watcher is None:
             watcher = create_watcher(platform)
@@ -127,6 +137,25 @@ class LyricsOverlay(QWidget):
         self.frame_timer = QTimer(self)
         self.frame_timer.timeout.connect(self.update_frame)
         self.frame_timer.start(config.FRAME_INTERVAL)
+
+    def set_display_mode(self, mode):
+        """
+        设置歌词显示模式并重建当前显示的歌词。
+
+        Args:
+            mode: original（仅原文）/ translation（仅翻译）/ both（双语）。
+        """
+
+        if mode not in ("original", "translation", "both"):
+            mode = "both"
+
+        self.display_mode = mode
+        logger.info(f"歌词显示模式：{mode}")
+
+        # 立即按新模式重排当前仍在显示窗口内的歌词
+        self.active_lyrics.clear()
+        self._resync_lyrics_to_time()
+        self.update()
 
     def apply_lyrics(self, lyrics, start_offset, song, artist):
         """应用新歌曲的歌词数据并重置歌词时间轴。
@@ -355,6 +384,18 @@ class LyricsOverlay(QWidget):
         source = self.lyrics[index]
         text = source.text
 
+        # 按显示模式组装主行与翻译行：
+        # original → 仅原文；translation → 仅翻译（无翻译行回退原文）；
+        # both → 原文行 + 翻译行（同字号、同外观，翻译接在原文各行之后）
+        trans_text = getattr(source, "trans", "") or ""
+
+        if self.display_mode == "translation":
+            main_text, extra_text = (trans_text or text), ""
+        elif self.display_mode == "both":
+            main_text, extra_text = text, trans_text
+        else:
+            main_text, extra_text = text, ""
+
         # 让歌词对象在 LRC 时间点前 0.2 秒开始进入生命周期。
         start_time = source.timestamp - 0.2
 
@@ -375,7 +416,15 @@ class LyricsOverlay(QWidget):
         else:
             end_time = start_time + config.MAX_LYRIC_LIFETIME
 
-        lines = self.wrap_text(text)
+        main_lines = self.wrap_text(main_text)
+        lines = list(main_lines)
+
+        # 原文部分的总字符数：用于翻译行按句内索引计时
+        main_char_count = sum(len(line) for line in main_lines)
+
+        # 双语模式：翻译分行后接在原文各行之后（原文换行则翻译再下移一行）
+        if extra_text:
+            lines = lines + self.wrap_text(extra_text)
 
         # 每句歌词创建时随机确定旋转角度，
         angle = self.random.randint(config.MIN_ANGLE, config.MAX_ANGLE)
@@ -401,9 +450,14 @@ class LyricsOverlay(QWidget):
                 char_width = self.fm.horizontalAdvance(char)
 
                 # 同一行的字符按照固定间隔依次出现。
-                global_index = self.get_global_char_index(lines, line_index, char_index)
+                index_in_sentence = self.get_global_char_index(lines, line_index, char_index)
 
-                appear_time = start_time + global_index * config.CHAR_INTERVAL
+                # 翻译行按句内索引计时：
+                # 与原句第 i 个字符同时出现（并行逐字），而非接在原文之后。
+                if line_index >= len(main_lines):
+                    index_in_sentence -= main_char_count
+
+                appear_time = start_time + index_in_sentence * config.CHAR_INTERVAL
 
                 characters.append(
                     CharacterState(

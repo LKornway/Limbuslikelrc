@@ -27,9 +27,10 @@ class NetEaseBridge(QObject):
     网易云歌词请求结果的信号桥接。
 
     用于后台请求完成后向主线程发送结果。
+    参数：歌曲、歌手、歌词文本、状态、翻译歌词文本。
     """
 
-    result = Signal(str, str, str, str)
+    result = Signal(str, str, str, str, str)
 
 
 class NetEaseMusic:
@@ -52,14 +53,14 @@ class NetEaseMusic:
     @staticmethod
     def fetch_lyrics(song, artist=""):
         """
-        根据歌曲信息获取 LRC 歌词。
+        根据歌曲信息获取 LRC 歌词与翻译歌词。
 
         Args:
             song: 歌曲名称。
             artist: 歌手名称（可选）。
 
         Returns:
-            str | None: LRC 歌词文本，获取失败返回 None。
+            (str | None, str): 歌词文本与翻译歌词文本（无翻译时为空串）。
         """
 
         keyword = f"{song} {artist}".strip()
@@ -87,12 +88,12 @@ class NetEaseMusic:
             if not songs:
                 logger.error(f"搜索不到：{keyword}")
 
-                return None
+                return None, ""
 
             song_id = songs[0].get("id")
 
             if not song_id:
-                return None
+                return None, ""
             logger.info(f"song_id={song_id}")
 
             lyric_url = "https://music.163.com/api/song/lyric"
@@ -103,7 +104,7 @@ class NetEaseMusic:
                     "id": song_id,
                     "lv": 1,
                     "kv": 1,
-                    "tv": -1,
+                    "tv": 1,
                 },
                 headers=NetEaseMusic.HEADERS,
                 timeout=5
@@ -117,9 +118,11 @@ class NetEaseMusic:
 
             if not lrc or "[" not in lrc:
                 logger.info(f"「{song}」没有可用 LRC")
-                return None
+                return None, ""
 
-            return lrc
+            trans = lyric_data.get("tlyric", {}).get("lyric", "") or ""
+
+            return lrc, trans
 
         except requests.RequestException as exc:
             logger.error(f"网络请求失败：{exc}")
@@ -127,23 +130,23 @@ class NetEaseMusic:
         except Exception as exc:
             logger.error(f"获取歌词失败：{exc}")
 
-        return None
+        return None, ""
 
     @staticmethod
     def fetch_lyrics_by_id(track_id):
-        """直接通过歌曲 ID 获取 LRC 歌词。
+        """直接通过歌曲 ID 获取 LRC 歌词与翻译歌词。
 
         Args:
             track_id: 歌曲 ID（字符串或整数）。
 
         Returns:
-            str | None: LRC 歌词文本，获取失败返回 None。
+            (str | None, str): 歌词文本与翻译歌词文本（无翻译时为空串）。
         """
         try:
             lyric_url = "https://music.163.com/api/song/lyric"
             response = requests.get(
                 lyric_url,
-                params={"id": track_id, "lv": 1, "kv": 1, "tv": -1},
+                params={"id": track_id, "lv": 1, "kv": 1, "tv": 1},
                 headers=NetEaseMusic.HEADERS,
                 timeout=5
             )
@@ -151,13 +154,14 @@ class NetEaseMusic:
             data = response.json()
             lrc = data.get("lrc", {}).get("lyric", "")
             if lrc and "[" in lrc:
-                return lrc
+                trans = data.get("tlyric", {}).get("lyric", "") or ""
+                return lrc, trans
             else:
                 logger.info(f"ID {track_id} 没有可用 LRC")
-                return None
+                return None, ""
         except Exception as e:
             logger.error(f"通过 ID 获取歌词失败: {e}")
-            return None
+            return None, ""
 
 
 class NeteaseSource(QObject):
@@ -250,6 +254,30 @@ class NeteaseSource(QObject):
         except Exception as e:
             logger.warning(f"保存歌词缓存失败: {e}")
 
+    def _get_cached_trans(self, track_id: str) -> str:
+        """从缓存读取翻译歌词（无缓存返回空串）。"""
+        if not track_id or track_id == "0":
+            return ""
+        cache_file = self._cache_dir / f"{track_id}.tlyric.lrc"
+        if cache_file.exists():
+            try:
+                return cache_file.read_text(encoding="utf-8")
+            except Exception:
+                return ""
+        return ""
+
+    def _save_cached_trans(self, track_id: str, trans_text: str) -> None:
+        """保存翻译歌词到缓存。"""
+        if not track_id or track_id == "0" or not trans_text:
+            return
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = self._cache_dir / f"{track_id}.tlyric.lrc"
+        try:
+            cache_file.write_text(trans_text, encoding="utf-8")
+            logger.info(f"翻译歌词缓存已保存: {track_id}")
+        except Exception as e:
+            logger.warning(f"保存翻译歌词缓存失败: {e}")
+
     def handle_track_change(self, song, artist, track_id_str, album=""):
         """
         处理当前歌曲变化，由 CloudMusicWatcher.track_changed 触发。
@@ -298,23 +326,36 @@ class NeteaseSource(QObject):
 
         def worker():
             lrc = None
+            trans = ""
 
-            # 1. 先尝试从缓存读取
+            # 1. 先尝试从缓存读取（缓存中可能只有旧版原文，翻译稍后补齐）
             if self._current_track_id and self._current_track_id != "0":
                 lrc = self._get_cached_lyrics(self._current_track_id)
+                trans = self._get_cached_trans(self._current_track_id)
                 if lrc:
                     logger.info(f"使用缓存歌词: {song} - {artist}")
+
+                # 1.1 原文已缓存但缺少翻译缓存：补一次网络请求
+                if lrc and not trans:
+                    _, fetched_trans = NetEaseMusic.fetch_lyrics_by_id(
+                        self._current_track_id
+                    )
+                    if fetched_trans:
+                        trans = fetched_trans
+                        self._save_cached_trans(self._current_track_id, trans)
 
             # 2. 缓存未命中，请求网络
             if not lrc:
                 if self._current_track_id and self._current_track_id != "0":
-                    lrc = NetEaseMusic.fetch_lyrics_by_id(self._current_track_id)
+                    lrc, trans = NetEaseMusic.fetch_lyrics_by_id(self._current_track_id)
                 if not lrc:
                     # 回退到搜索
-                    lrc = NetEaseMusic.fetch_lyrics(song, artist)
+                    lrc, trans = NetEaseMusic.fetch_lyrics(song, artist)
                 # 如果获取成功，保存缓存
                 if lrc and self._current_track_id and self._current_track_id != "0":
                     self._save_cached_lyrics(self._current_track_id, lrc)
+                    if trans:
+                        self._save_cached_trans(self._current_track_id, trans)
 
             # 3. 发送结果
             self.bridge.result.emit(
@@ -322,11 +363,12 @@ class NeteaseSource(QObject):
                 artist or "",
                 lrc or "",
                 "ok" if lrc else "error",
+                trans or "",
             )
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _on_fetch_done(self, song, artist, lrc_text, status):
+    def _on_fetch_done(self, song, artist, lrc_text, status, trans_text=""):
         """
         处理后台歌词请求结果。
 
@@ -335,6 +377,7 @@ class NeteaseSource(QObject):
             artist: 歌手名称。
             lrc_text: LRC 歌词文本。
             status: 请求结果状态，'ok' 或 'error'。
+            trans_text: 翻译歌词文本（LRC 格式，可为空）。
         """
 
         self.fetching = False
@@ -356,7 +399,7 @@ class NeteaseSource(QObject):
             self.lyrics_failed.emit(song, artist or "")
             return
 
-        lyrics = parse_lrc_text(lrc_text)
+        lyrics = parse_lrc_text(lrc_text, trans_text)
 
         if not lyrics:
             logger.info(f"LRC 解析失败：{song} - {artist}")

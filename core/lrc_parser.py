@@ -56,12 +56,13 @@ def _is_title_line(timestamp: float, text: str) -> bool:
     return bool(text) and len(text) <= 80 and bool(_TITLE_LINE_RE.search(text))
 
 
-def parse_lrc_text(lrc_text):
+def parse_lrc_text(lrc_text, trans_text=""):
     """
     解析 LRC 格式歌词文本。
 
     Args:
         lrc_text: LRC 格式歌词字符串。
+        trans_text: 翻译歌词文本（同为 LRC 格式），按时间戳合并到原文行。
 
     Returns:
         list[LRCLine]: 按时间排序的 LRCLine 列表。
@@ -69,6 +70,27 @@ def parse_lrc_text(lrc_text):
 
     if not lrc_text:
         return []
+
+    result = _parse_timed_lines(lrc_text)
+
+    if trans_text:
+        _merge_translation(result, _parse_timed_lines(trans_text))
+
+    result.sort(key=lambda item: item.timestamp)
+
+    return result
+
+
+def _parse_timed_lines(lrc_text):
+    """
+    解析带时间戳的歌词行（原文与翻译共用）。
+
+    Args:
+        lrc_text: LRC 格式歌词字符串。
+
+    Returns:
+        list[LRCLine]: 时间戳与文本列表（trans 为空）。
+    """
 
     result = []
     pattern = re.compile(r"\[(\d+):(\d+(?:\.\d+)?)\]")
@@ -109,3 +131,28 @@ def parse_lrc_text(lrc_text):
     result.sort(key=lambda item: item.timestamp)
 
     return result
+
+
+def _merge_translation(lines, trans_lines):
+    """
+    按时间戳把翻译歌词合并到原文行。
+
+    网易云的 tlyric 与原文时间戳一一对应（毫秒级一致），
+    这里以 0.01 秒精度做键匹配，匹配不到的翻译行直接忽略。
+
+    Args:
+        lines: 原文歌词行列表（原地修改）。
+        trans_lines: 翻译歌词行列表。
+    """
+
+    if not lines or not trans_lines:
+        return
+
+    index = {}
+    for line in lines:
+        index.setdefault(round(line.timestamp, 2), line)
+
+    for trans in trans_lines:
+        target = index.get(round(trans.timestamp, 2))
+        if target is not None and not target.trans:
+            target.trans = trans.text

@@ -748,6 +748,10 @@ class MainWindow(QMainWindow):
 
             if getattr(self, "overlay", None) is not None:
                 self.overlay.reload_config()
+                # 歌词显示模式（原文/翻译/双语）即时生效
+                self.overlay.set_display_mode(
+                    self._settings["app"].get("lyric_display_mode", "both")
+                )
 
             self._apply_hotkeys()
 

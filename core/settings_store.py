@@ -25,6 +25,8 @@ APP_DEFAULTS = {
     "ui_accent": "#d8a523",
     "ui_text": "#f2f2f2",
     "music_platform": "netease",
+    # 歌词显示模式：original（仅原文）/ translation（仅翻译）/ both（双语）
+    "lyric_display_mode": "both",
     "hotkey_play_pause": ["ctrl", "alt", "p"],
     "hotkey_next": ["ctrl", "alt", "right"],
     "hotkey_previous": ["ctrl", "alt", "left"],

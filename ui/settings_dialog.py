@@ -257,6 +257,16 @@ class SettingsDialog(QDialog):
         self.platform_combo.currentIndexChanged.connect(self._on_platform_changed)
         self._update_platform_hint()
 
+        # 歌词显示模式（网易云支持双语，即时生效）
+        self.display_combo = QComboBox()
+        self.display_combo.addItem("原文 + 翻译（双语）", "both")
+        self.display_combo.addItem("仅原文", "original")
+        self.display_combo.addItem("仅翻译", "translation")
+        current_mode = self._app_settings.get("lyric_display_mode", "both")
+        display_index = self.display_combo.findData(current_mode)
+        self.display_combo.setCurrentIndex(max(0, display_index))
+        app_form.addRow("歌词显示", self.display_combo)
+
         self.tray_combo = QComboBox()
         self.tray_combo.addItem("每次询问", None)
         self.tray_combo.addItem("关闭时最小化到托盘", True)
@@ -439,6 +449,7 @@ class SettingsDialog(QDialog):
 
         self._app_settings["minimize_to_tray_on_close"] = self.tray_combo.currentData()
         self._app_settings["music_platform"] = self.platform_combo.currentData()
+        self._app_settings["lyric_display_mode"] = self.display_combo.currentData()
 
         for key, editor in self._hotkey_editors.items():
             self._app_settings[key] = editor.keys

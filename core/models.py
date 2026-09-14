@@ -15,10 +15,12 @@ class LRCLine:
     单行歌词数据。
 
     保存歌词文本以及对应时间戳。
+    trans 为该行的翻译歌词（无翻译时为空串）。
     """
 
     timestamp: float
     text: str
+    trans: str = ""
 
 
 @dataclass
