@@ -21,6 +21,7 @@ import urllib.request
 from PySide6.QtCore import QObject, Signal
 
 import config
+from core.http_utils import http_get_json
 from core.Kugou import kugou_paths
 from core.Kugou.krc_utils import decrypt_krc_file, parse_krc
 from core.lrc_parser import parse_lrc_text
@@ -37,6 +38,23 @@ KUGOU_HEADERS = {
     "Referer": "https://www.kugou.com/",
 }
 
+# 搜索接口按可用性依次降级：移动端接口 → 网页版搜索接口
+KUGOU_SEARCH_APIS = [
+    (
+        "mobilecdn",
+        "http://mobilecdn.kugou.com/api/v3/search/song",
+        {"format": "json", "page": 1, "pagesize": 5},
+    ),
+    (
+        "songsearch",
+        "http://songsearch.kugou.com/song_search_v2",
+        {
+            "format": "json", "page": 1, "pagesize": 5,
+            "platform": "WebFilter", "iscorrection": 1, "privilege_filter": 0,
+        },
+    ),
+]
+
 _KRC_FILE_RE = re.compile(r"^(.*)-([0-9a-f]{32})-(\d+)-(\d+)\.krc$")
 
 
@@ -45,9 +63,8 @@ def _norm(s):
 
 
 def _http_get_json(url):
-    req = urllib.request.Request(url, headers=KUGOU_HEADERS)
-    with urllib.request.urlopen(req, timeout=8) as resp:
-        return __import__("json").loads(resp.read().decode("utf-8", "ignore"))
+    """GET 并解析 JSON（直连，忽略系统/环境变量代理）。"""
+    return http_get_json(url, headers=KUGOU_HEADERS)
 
 
 def find_local_krc(artist, song):
@@ -79,33 +96,66 @@ def _search_online(song, artist):
     """
     酷狗在线搜索，返回歌曲信息字典。
 
+    按顺序尝试多个搜索接口（移动端接口对部分歌曲会返回空结果，
+    此时自动降级到网页版搜索接口）。两个接口的响应结构不同，
+    这里统一成 hash / album_id / album_name / duration。
+
     Returns:
         dict | None: 含 hash 等字段；失败返回 None。
     """
     keyword = f"{artist} {song}".strip()
-    url = (
-        "http://mobilecdn.kugou.com/api/v3/search/song?"
-        + urllib.parse.urlencode(
-            {"format": "json", "keyword": keyword, "page": 1, "pagesize": 5}
-        )
-    )
-    try:
-        data = _http_get_json(url)
-        infos = data.get("data", {}).get("info", [])
-    except Exception as exc:
-        logger.warning(f"酷狗搜索失败：{exc}")
-        return None
 
-    if not infos:
-        logger.warning(f"酷狗搜索无结果：{keyword}")
-        return None
+    for source, api, base_params in KUGOU_SEARCH_APIS:
+        url = api + "?" + urllib.parse.urlencode({**base_params, "keyword": keyword})
+        try:
+            data = _http_get_json(url)
+        except Exception as exc:
+            logger.warning(f"酷狗搜索接口失败（{source}）：{exc}")
+            continue
 
-    item = infos[0]
+        info = _pick_search_item(data, source)
+        if info and info.get("hash"):
+            return info
+
+        logger.info(f"酷狗搜索无结果（{source}）：{keyword}")
+
+    return None
+
+
+def _pick_search_item(data, source):
+    """
+    从不同搜索接口的响应中取出第一条歌曲信息。
+
+    Args:
+        data: 接口返回的 JSON。
+        source: 接口标识（mobilecdn / songsearch）。
+
+    Returns:
+        dict | None: 统一字段的歌曲信息。
+    """
+
+    if source == "mobilecdn":
+        items = (data.get("data") or {}).get("info") or []
+        if not items:
+            return None
+        item = items[0]
+        return {
+            "hash": item.get("hash", ""),
+            "album_id": item.get("album_id", ""),
+            "album_name": item.get("album_name", ""),
+            "duration": item.get("duration", 0),
+        }
+
+    # 网页版搜索：字段名为首字母大写
+    items = (data.get("data") or {}).get("lists") or []
+    if not items:
+        return None
+    item = items[0]
     return {
-        "hash": item.get("hash", ""),
-        "album_id": item.get("album_id", ""),
-        "album_name": item.get("album_name", ""),
-        "duration": item.get("duration", 0),
+        "hash": item.get("FileHash", ""),
+        "album_id": item.get("AlbumID", ""),
+        "album_name": item.get("AlbumName", ""),
+        "duration": item.get("Duration", 0),
     }
 
 

@@ -20,6 +20,7 @@ import urllib.request
 from PySide6.QtCore import QObject, Signal
 
 import config
+from core.http_utils import http_get_json
 from core.lrc_parser import parse_lrc_text
 from core.logger import get_logger
 from core.settings_store import settings_path
@@ -43,10 +44,8 @@ LYRIC_API = "https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg"
 
 
 def _http_get_json(url):
-    """GET 并解析 JSON。"""
-    req = urllib.request.Request(url, headers=QQ_HEADERS)
-    with urllib.request.urlopen(req, timeout=8) as resp:
-        return json.loads(resp.read().decode("utf-8", "ignore"))
+    """GET 并解析 JSON（直连，忽略系统/环境变量代理）。"""
+    return http_get_json(url, headers=QQ_HEADERS)
 
 
 def _search_songmid(song, artist, album=""):

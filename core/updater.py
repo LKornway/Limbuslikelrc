@@ -16,6 +16,7 @@ from PySide6.QtCore import QObject, Signal, QThread
 
 from config import APP_VERSION
 from core.logger import get_logger
+from core.http_utils import shared_session
 logger = get_logger()
 
 
@@ -52,7 +53,7 @@ class UpdateThread(QThread):
 
     def run(self):
         try:
-            resp = requests.get(GITHUB_API_URL, timeout=5)
+            resp = shared_session().get(GITHUB_API_URL, timeout=5)
             resp.raise_for_status()
             data = resp.json()
             latest_tag = data.get("tag_name", "").lstrip("v")
@@ -120,7 +121,7 @@ class DownloadThread(QThread):
 
     def run(self):
         try:
-            resp = requests.get(self.url, stream=True, timeout=10)
+            resp = shared_session().get(self.url, stream=True, timeout=10)
             resp.raise_for_status()
             total_size = int(resp.headers.get('content-length', 0))
             downloaded = 0

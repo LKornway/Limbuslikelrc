@@ -120,9 +120,12 @@ def find_main_window():
     if not found:
         return None
 
-    # 优先标题含播放信息（"歌手 - 歌名 - 酷狗音乐"）的窗口，取面积最大者
-    playing = [(a, h, c, t) for a, h, c, t in found if " - 酷狗音乐" in t]
-    candidates = playing or found
+    # 播放中的标题形如 "{歌手} - {歌名} - 酷狗音乐"（含两个分隔符），
+    # 而「桌面歌词」等窗口只有 "桌面歌词 - 酷狗音乐"（一个分隔符），
+    # 因此优先选含两个 " - " 的窗口，再按面积取最大者。
+    playing = [(a, h, c, t) for a, h, c, t in found if t.count(" - ") >= 2]
+    fallback = [(a, h, c, t) for a, h, c, t in found if " - 酷狗音乐" in t]
+    candidates = playing or fallback or found
     candidates.sort(key=lambda x: x[0], reverse=True)
     return candidates[0][1]
 

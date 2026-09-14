@@ -27,6 +27,8 @@ APP_DEFAULTS = {
     "music_platform": "netease",
     # 歌词显示模式：original（仅原文）/ translation（仅翻译）/ both（双语）
     "lyric_display_mode": "both",
+    # 网络代理：空字符串 = 直连（忽略系统代理与 VPN），可填 http://127.0.0.1:7897
+    "network_proxy": "",
     "hotkey_play_pause": ["ctrl", "alt", "p"],
     "hotkey_next": ["ctrl", "alt", "right"],
     "hotkey_previous": ["ctrl", "alt", "left"],

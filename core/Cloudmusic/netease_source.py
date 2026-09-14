@@ -17,6 +17,7 @@ from PySide6.QtCore import QObject, Signal
 import config
 from core.lrc_parser import parse_lrc_text
 from core.logger import get_logger
+from core.http_utils import shared_session
 from core.settings_store import settings_path
 
 logger = get_logger()
@@ -68,7 +69,7 @@ class NetEaseMusic:
         try:
             search_url = "https://music.163.com/api/search/get"
 
-            response = requests.get(
+            response = shared_session().get(
                 search_url,
                 params={
                     "s": keyword,
@@ -98,7 +99,7 @@ class NetEaseMusic:
 
             lyric_url = "https://music.163.com/api/song/lyric"
 
-            lyric_response = requests.get(
+            lyric_response = shared_session().get(
                 lyric_url,
                 params={
                     "id": song_id,
@@ -144,7 +145,7 @@ class NetEaseMusic:
         """
         try:
             lyric_url = "https://music.163.com/api/song/lyric"
-            response = requests.get(
+            response = shared_session().get(
                 lyric_url,
                 params={"id": track_id, "lv": 1, "kv": 1, "tv": 1},
                 headers=NetEaseMusic.HEADERS,

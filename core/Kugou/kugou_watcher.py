@@ -4,19 +4,23 @@
 酷狗客户端不提供 SMTC 播放进度，也没有可读的播放事件日志，
 且界面进度无法可靠识别，因此进度采用本地时钟方案：
 
-1. 切歌识别：轮询酷狗主窗口标题 "{歌手} - {歌名} - 酷狗音乐"；
+1. 切歌识别：轮询酷狗主窗口标题 "{歌手} - {歌名} - 酷狗音乐"，
+   主窗口不可见（最小化/桌面歌词形态）时回退 SMTC 曲目；
 2. 精确歌曲标识：切歌后酷狗会向歌词目录写入
    "{歌手} - {歌名}-{hash}-{歌曲ID}-{类型}.krc"，从中学习 hash；
-3. 播放进度（本地时钟模式）：从切歌时刻起按本地时钟累计，
-   无法感知暂停/继续与真实进度（仅能从头播放展示歌词，
-   长时间会累积偏差）。
+3. 播放状态与封面：读取酷狗的 SMTC 媒体会话（酷狗会注册会话，
+   进度恒为 0，但可提供播放/暂停状态与封面）；
+4. 播放进度：从切歌时刻起按本地时钟累计，暂停期间冻结，
+   恢复时补偿暂停时长（无法获得真实进度，长播会累积偏差）。
 
 对外信号与 cloudmusic_watcher 保持一致：
     track_changed(song, artist, track_id, album)
     is_playing_changed(playing)
     position_changed(position)
+    cover_changed(bytes)
 """
 
+import asyncio
 import re
 import threading
 import time
@@ -96,6 +100,12 @@ class KugouWatcher(QObject):
     is_playing_changed = Signal(bool)
     position_changed = Signal(float)
     track_changed = Signal(str, str, str, str)
+    cover_changed = Signal(bytes)
+
+    # SMTC 会话标识与播放状态常量（酷狗注册的媒体会话）
+    SMTC_APP_HINT = "kugou"
+    SMTC_QUERY_INTERVAL = 1.0
+    PLAYING_STATUS = 4
 
     def __init__(self, parent=None, poll_interval_ms=400):
         """
@@ -125,6 +135,15 @@ class KugouWatcher(QObject):
         self._calib_monotonic = time.monotonic()
         self._pending_emit = None  # (song, artist) 待延迟发出的切歌
 
+        # SMTC：提供播放/暂停状态与封面（进度仍由本地时钟累计）
+        self._loop = None
+        self._loop_thread = None
+        self._smtc = None
+        self._last_smtc_query = 0.0
+        self._cover_key = None
+        self._pause_started = None
+        self._start_smtc_loop()
+
         # hash 学习线程
         self._scanner = None
         if self._lyric_dir is not None:
@@ -139,6 +158,125 @@ class KugouWatcher(QObject):
         self._emit_timer = QTimer(self)
         self._emit_timer.setSingleShot(True)
         self._emit_timer.timeout.connect(self._emit_pending_track)
+
+    def _start_smtc_loop(self):
+        """启动常驻事件循环线程，供 SMTC 异步调用使用。"""
+
+        def runner():
+            self._loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self._loop)
+            self._loop.run_forever()
+
+        self._loop_thread = threading.Thread(target=runner, daemon=True)
+        self._loop_thread.start()
+
+    def _smtc_tick(self):
+        """按固定间隔在后台线程查询一次 SMTC 会话。"""
+
+        now = time.monotonic()
+        if now - self._last_smtc_query < self.SMTC_QUERY_INTERVAL:
+            return
+        self._last_smtc_query = now
+
+        if self._loop is None:
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(self._query_smtc(), self._loop)
+        except Exception as exc:
+            logger.debug(f"SMTC 查询提交失败：{exc}")
+
+    async def _query_smtc(self):
+        """查询酷狗的 SMTC 会话（曲目、播放状态、封面）。"""
+
+        try:
+            from winrt.windows.media.control import (
+                GlobalSystemMediaTransportControlsSessionManager as MediaManager,
+            )
+
+            manager = await MediaManager.request_async()
+            session = manager.get_current_session()
+            if session is None:
+                self._smtc = None
+                return
+
+            # 当前媒体会话不是酷狗（例如 QQ 音乐在播放）时不使用
+            app_id = (session.source_app_user_model_id or "").lower()
+            if self.SMTC_APP_HINT not in app_id:
+                self._smtc = None
+                return
+
+            props = await session.try_get_media_properties_async()
+            info = session.get_playback_info()
+
+            self._smtc = {
+                "title": props.title or "",
+                "artist": props.artist or "",
+                "album": props.album_title or "",
+                "playing": int(info.playback_status) == self.PLAYING_STATUS,
+            }
+
+            # 曲目变化时读取一次封面
+            key = f"{self._smtc['artist']}|{self._smtc['title']}"
+            if key != self._cover_key and props.thumbnail is not None:
+                self._cover_key = key
+                raw = await self._read_thumbnail(props.thumbnail)
+                if raw:
+                    self.cover_changed.emit(raw)
+                    logger.info(f"SMTC 封面就绪：{len(raw)}B")
+
+        except Exception as exc:
+            logger.debug(f"SMTC 查询失败：{exc}")
+            self._smtc = None
+
+    async def _read_thumbnail(self, thumbnail_ref):
+        """
+        读取 SMTC 缩略图字节。
+
+        Args:
+            thumbnail_ref: SMTC 媒体属性中的缩略图引用。
+
+        Returns:
+            bytes | None: 图片数据，失败返回 None。
+        """
+
+        try:
+            from winrt.windows.storage.streams import DataReader
+
+            stream = await thumbnail_ref.open_read_async()
+            size = stream.size
+            reader = DataReader(stream.get_input_stream_at(0))
+            await reader.load_async(size)
+            buf = bytearray(size)
+            reader.read_bytes(buf)
+            return bytes(buf)
+        except Exception as exc:
+            logger.debug(f"SMTC 封面读取失败：{exc}")
+            return None
+
+    def _update_playback_state(self):
+        """按 SMTC 状态更新播放/暂停，并补偿暂停期间的本地时钟。"""
+
+        smtc = self._smtc
+        if not smtc or "playing" not in smtc:
+            return
+
+        playing = bool(smtc["playing"])
+        if playing == self._last_playing:
+            return
+
+        self._last_playing = playing
+        now = time.monotonic()
+
+        if playing:
+            # 恢复播放：把暂停时长从本地时钟基准中扣除，保持进度连续
+            if self._pause_started is not None:
+                self._calib_monotonic += now - self._pause_started
+                self._pause_started = None
+        else:
+            self._pause_started = now
+
+        logger.info("酷狗播放，时间轴推进" if playing else "酷狗暂停，时间轴冻结")
+        self.is_playing_changed.emit(playing)
 
     def _main_window(self):
         """获取（或重新定位）酷狗主窗口句柄。"""
@@ -165,13 +303,23 @@ class KugouWatcher(QObject):
         return buf.value
 
     def _poll(self):
-        """轮询标题与进度。"""
-        hwnd = self._main_window()
-        if hwnd is None:
-            return
+        """轮询曲目、播放状态与进度。"""
 
-        artist, song = kugou_paths.parse_main_title(self._window_title(hwnd))
+        self._smtc_tick()
+
+        # 曲目优先取主窗口标题（歌手字段与歌词文件名一致），
+        # 主窗口不可见时（最小化/仅桌面歌词）回退 SMTC 曲目。
+        song = artist = None
+        hwnd = self._main_window()
+        if hwnd is not None:
+            artist, song = kugou_paths.parse_main_title(self._window_title(hwnd))
+
+        if not song and self._smtc and self._smtc.get("title"):
+            song = self._smtc["title"]
+            artist = self._smtc.get("artist") or ""
+
         if not song:
+            self._update_playback_state()
             return
 
         key = _norm(f"{artist} - {song}")
@@ -185,6 +333,7 @@ class KugouWatcher(QObject):
             self._pending_emit = (song, artist)
             self._emit_timer.start(600)
 
+        self._update_playback_state()
         self._update_position()
 
     def _emit_pending_track(self):
@@ -202,9 +351,13 @@ class KugouWatcher(QObject):
         # 以切歌时刻为进度零点，重置校准基准
         self._calib_position = 0.0
         self._calib_monotonic = time.monotonic()
+        self._pause_started = None
+
+        # 首次播放状态：优先使用 SMTC 的真实状态
         if self._last_playing is None:
-            self._last_playing = True
-            self.is_playing_changed.emit(True)
+            playing = bool(self._smtc.get("playing")) if self._smtc else True
+            self._last_playing = playing
+            self.is_playing_changed.emit(playing)
 
         logger.info(f"当前歌曲：{song} - {artist}（hash={self._hash or '待获取'}）")
         self.track_changed.emit(song, artist, self._hash, "")
@@ -243,16 +396,15 @@ class KugouWatcher(QObject):
         self._send_command("try_skip_previous_async")
 
     def _send_command(self, method_name):
-        """在独立线程的事件循环中执行 SMTC 控制命令。"""
-        def runner():
-            try:
-                import asyncio
-
-                asyncio.run(self._run_command(method_name))
-            except Exception as exc:
-                logger.warning(f"酷狗 SMTC 控制失败：{exc}")
-
-        threading.Thread(target=runner, daemon=True).start()
+        """在常驻事件循环中执行 SMTC 控制命令。"""
+        if self._loop is None:
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(
+                self._run_command(method_name), self._loop
+            )
+        except Exception as exc:
+            logger.warning(f"酷狗 SMTC 控制失败：{exc}")
 
     async def _run_command(self, method_name):
         """调用当前媒体会话（酷狗）的控制方法。"""
@@ -273,3 +425,5 @@ class KugouWatcher(QObject):
         self._poll_timer.stop()
         if self._scanner is not None:
             self._scanner._running = False
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self._loop.stop)

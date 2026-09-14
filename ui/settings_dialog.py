@@ -276,6 +276,19 @@ class SettingsDialog(QDialog):
         self.display_combo.setCurrentIndex(max(0, display_index))
         app_form.addRow("歌词显示", self.display_combo)
 
+        # 网络代理：默认直连（忽略系统代理与 VPN），需要时才填写
+        self.proxy_edit = QLineEdit(self._app_settings.get("network_proxy", ""))
+        self.proxy_edit.setPlaceholderText("留空 = 直连（忽略系统代理与 VPN）")
+        app_form.addRow("网络代理", self.proxy_edit)
+
+        proxy_hint = QLabel(
+            "默认直连线路：不读取系统代理与环境变量，避免 VPN/代理软件导致歌词接口失败。\n"
+            "仅当直连不可用时，才填写代理地址（如 http://127.0.0.1:7897）。"
+        )
+        proxy_hint.setWordWrap(True)
+        proxy_hint.setStyleSheet("color: #b0a080; font-size: 11px;")
+        app_form.addRow("", proxy_hint)
+
         self.tray_combo = QComboBox()
         self.tray_combo.addItem("每次询问", None)
         self.tray_combo.addItem("关闭时最小化到托盘", True)
@@ -459,6 +472,7 @@ class SettingsDialog(QDialog):
         self._app_settings["minimize_to_tray_on_close"] = self.tray_combo.currentData()
         self._app_settings["music_platform"] = self.platform_combo.currentData()
         self._app_settings["lyric_display_mode"] = self.display_combo.currentData()
+        self._app_settings["network_proxy"] = self.proxy_edit.text().strip()
 
         for key, editor in self._hotkey_editors.items():
             self._app_settings[key] = editor.keys

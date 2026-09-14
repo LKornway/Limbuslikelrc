@@ -30,6 +30,10 @@ def main():
     settings = load_settings()
     platform = settings["app"].get("music_platform", "netease")
 
+    # 网络线路：默认直连（忽略系统代理与 VPN），可在设置中指定代理
+    from core import http_utils
+    http_utils.set_proxy(settings["app"].get("network_proxy", ""))
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 

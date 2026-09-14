@@ -181,6 +181,10 @@ class MainWindow(QMainWindow):
         self._duration = 0.0
         self._song_key = ""
 
+        # 当前封面来源信息（避免同一首歌被更小的封面覆盖）
+        self._cover_song_key = ""
+        self._cover_pixels = 0
+
         self._cover_bridge = CoverBridge()
         self._cover_bridge.arrived.connect(self._on_cover_bytes)
         self._cover_bridge.duration_arrived.connect(self._on_duration)
@@ -699,6 +703,15 @@ class MainWindow(QMainWindow):
         if image.isNull():
             self.cover_label.setText("无封面")
             return
+
+        # 同一首歌可能有多个封面来源（如酷狗的 SMTC 封面与本地缓存封面），
+        # 已显示较大封面时忽略更小的，避免大图被小图覆盖。
+        pixels = image.width() * image.height()
+        if song_key == self._cover_song_key and pixels < self._cover_pixels:
+            return
+        self._cover_song_key = song_key
+        self._cover_pixels = pixels
+
         pix = QPixmap.fromImage(image).scaled(
             self.cover_label.width(),
             self.cover_label.height(),
@@ -742,6 +755,10 @@ class MainWindow(QMainWindow):
         dialog = SettingsDialog(self._settings["app"], self)
         if dialog.exec():
             self._settings["app"] = dialog.app_settings()
+
+            # 网络线路（直连 / 自定义代理）即时生效
+            from core import http_utils
+            http_utils.set_proxy(self._settings["app"].get("network_proxy", ""))
 
             if hasattr(self, "apply_theme"):
                 self.apply_theme(self._settings["app"])
