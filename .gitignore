@@ -31,10 +31,3 @@ dist/
 .mypy_cache/
 .ruff_cache/
 scripts/
-.dsh-vision-toolkit/
-
-# 本地临时测试脚本
-test.py
-test1.py
-test2.py
-test3.py
