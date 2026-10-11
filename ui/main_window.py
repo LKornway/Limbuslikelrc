@@ -604,6 +604,10 @@ class MainWindow(QMainWindow):
         """歌词来源通知获取失败时调用。"""
         self.status_label.setText("歌词获取失败")
 
+    def on_no_lyric(self, song: str, artist: str):
+        """曲目确实没有歌词时调用（与网络失败区分文案）。"""
+        self.status_label.setText("该歌曲暂无歌词")
+
 
     @staticmethod
     def _fmt_time(seconds: float) -> str:

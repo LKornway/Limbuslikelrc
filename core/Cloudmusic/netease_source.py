@@ -8,6 +8,8 @@
 本模块不再通过窗口标题识别歌曲。
 """
 
+import json
+import re
 import threading
 
 import requests
@@ -21,6 +23,185 @@ from core.http_utils import shared_session
 from core.settings_store import settings_path
 
 logger = get_logger()
+
+# yrc 逐字歌词行：[行起始毫秒,行时长毫秒](词偏移,词时长,标志)词...
+_YRC_LINE_RE = re.compile(r"^\[(\d+),(\d+)\](.*)")
+_YRC_WORD_RE = re.compile(r"\(\d+,\d+,\d+\)([^(]*)")
+
+
+def _to_lrc_line(timestamp_ms, text):
+    """把毫秒时间戳与文本格式化为一行 LRC。"""
+
+    total_seconds = timestamp_ms / 1000.0
+    minutes = int(total_seconds // 60)
+    seconds = total_seconds - minutes * 60
+    return f"[{minutes:02d}:{seconds:05.2f}]{text}"
+
+
+def _yrc_to_lrc(text):
+    """
+    把网易云 yrc（逐字歌词）转换为行级 LRC 文本。
+
+    部分曲目只在 yrc 字段下发歌词（lrc 为空），
+    这里按行合并逐字片段，得到与普通歌词同构的行级文本。
+
+    Args:
+        text: yrc 歌词文本。
+
+    Returns:
+        str: 行级 LRC 文本。
+    """
+
+    lines = []
+
+    for raw in text.replace("\r", "").split("\n"):
+        raw = raw.strip()
+        if not raw:
+            continue
+
+        match = _YRC_LINE_RE.match(raw)
+        if not match:
+            continue
+
+        content = match.group(3)
+        lyric = "".join(_YRC_WORD_RE.findall(content)).strip()
+
+        if lyric:
+            lines.append(_to_lrc_line(int(match.group(1)), lyric))
+
+    return "\n".join(lines)
+
+
+def _json_lyric_to_lrc(text):
+    """
+    把网易云 v1 接口的 JSON 逐行歌词转换为行级 LRC 文本。
+
+    v1 接口每行是一个 JSON 对象：{"t": 起始毫秒, "c": [{"tx": "片段"}]}；
+    纯音乐等场景也可能直接返回普通 LRC 行，这里一并兼容。
+
+    Args:
+        text: v1 接口返回的歌词文本。
+
+    Returns:
+        str: 行级 LRC 文本。
+    """
+
+    lines = []
+
+    for raw in text.replace("\r", "").split("\n"):
+        raw = raw.strip()
+        if not raw:
+            continue
+
+        # 已是普通 LRC 行（例如纯音乐占位文本）
+        if raw.startswith("["):
+            lines.append(raw)
+            continue
+
+        try:
+            item = json.loads(raw)
+        except ValueError:
+            continue
+
+        words = "".join(
+            (segment.get("tx") or "") for segment in (item.get("c") or [])
+        ).strip()
+
+        if words:
+            lines.append(_to_lrc_line(int(item.get("t") or 0), words))
+
+    return "\n".join(lines)
+
+
+def normalize_lyric_text(text):
+    """
+    把网易云各种歌词格式统一转换为行级 LRC 文本。
+
+    支持：普通 LRC、yrc 逐字歌词、v1 接口的 JSON 逐行歌词。
+
+    Args:
+        text: 接口返回的歌词文本。
+
+    Returns:
+        str: 行级 LRC 文本（无法识别时原样返回）。
+    """
+
+    if not text:
+        return ""
+
+    stripped = text.lstrip()
+
+    if stripped.startswith("{"):
+        return _json_lyric_to_lrc(text)
+
+    if _YRC_LINE_RE.match(stripped):
+        return _yrc_to_lrc(text)
+
+    return text
+
+
+def _cache_dir():
+    """歌词缓存目录（与 NeteaseSource 共用）。"""
+
+    return settings_path().parent / "cache"
+
+
+def _nolyric_marker(track_id):
+    """无歌词标记文件路径。"""
+
+    return _cache_dir() / f"{track_id}.nolyric"
+
+
+def has_nolyric_cache(track_id):
+    """
+    是否已确认该曲目没有歌词。
+
+    曲目确实无词时（例如受限曲目 / 未收录），网易云不会因为重试而给出歌词，
+    记录标记可避免每次播放都重复请求。
+
+    Args:
+        track_id: 歌曲 ID。
+
+    Returns:
+        bool: 是否存在无歌词标记。
+    """
+
+    if not track_id or track_id == "0":
+        return False
+    return _nolyric_marker(track_id).exists()
+
+
+def save_nolyric_cache(track_id):
+    """
+    记录该曲目没有歌词。
+
+    Args:
+        track_id: 歌曲 ID。
+    """
+
+    if not track_id or track_id == "0":
+        return
+    try:
+        _cache_dir().mkdir(parents=True, exist_ok=True)
+        _nolyric_marker(track_id).write_text("no-lyric", encoding="utf-8")
+    except OSError as exc:
+        logger.warning(f"保存无歌词标记失败: {exc}")
+
+
+def clear_nolyric_cache(track_id):
+    """
+    清除无歌词标记（取到歌词后调用）。
+
+    Args:
+        track_id: 歌曲 ID。
+    """
+
+    if not track_id or track_id == "0":
+        return
+    try:
+        _nolyric_marker(track_id).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 class NetEaseBridge(QObject):
@@ -54,7 +235,10 @@ class NetEaseMusic:
     @staticmethod
     def fetch_lyrics(song, artist=""):
         """
-        根据歌曲信息获取 LRC 歌词与翻译歌词。
+        根据歌曲信息搜索并获取 LRC 歌词与翻译歌词。
+
+        搜索结果可能包含同一首歌的多个版本（无歌词版 / 有词版），
+        因此取前若干条逐一尝试，并使用与 ID 取词相同的降级链。
 
         Args:
             song: 歌曲名称。
@@ -74,7 +258,7 @@ class NetEaseMusic:
                 params={
                     "s": keyword,
                     "type": 1,
-                    "limit": 1,
+                    "limit": 5,
                 },
                 headers=NetEaseMusic.HEADERS,
                 timeout=5
@@ -91,39 +275,18 @@ class NetEaseMusic:
 
                 return None, ""
 
-            song_id = songs[0].get("id")
+            for item in songs:
+                song_id = item.get("id")
+                if not song_id:
+                    continue
 
-            if not song_id:
-                return None, ""
-            logger.info(f"song_id={song_id}")
+                lrc, trans = NetEaseMusic.fetch_lyrics_by_id(song_id)
+                if lrc:
+                    logger.info(f"song_id={song_id}")
+                    return lrc, trans
 
-            lyric_url = "https://music.163.com/api/song/lyric"
-
-            lyric_response = shared_session().get(
-                lyric_url,
-                params={
-                    "id": song_id,
-                    "lv": 1,
-                    "kv": 1,
-                    "tv": 1,
-                },
-                headers=NetEaseMusic.HEADERS,
-                timeout=5
-            )
-
-            lyric_response.raise_for_status()
-
-            lyric_data = lyric_response.json()
-
-            lrc = lyric_data.get("lrc", {}).get("lyric", "")
-
-            if not lrc or "[" not in lrc:
-                logger.info(f"「{song}」没有可用 LRC")
-                return None, ""
-
-            trans = lyric_data.get("tlyric", {}).get("lyric", "") or ""
-
-            return lrc, trans
+            logger.info(f"「{song}」搜索结果均无可用歌词")
+            return None, ""
 
         except requests.RequestException as exc:
             logger.error(f"网络请求失败：{exc}")
@@ -134,8 +297,47 @@ class NetEaseMusic:
         return None, ""
 
     @staticmethod
+    def fetch_lyrics_v1(track_id):
+        """
+        通过 v1 歌词接口获取歌词（兜底）。
+
+        部分曲目在旧接口不下发普通 LRC（歌词只在 yrc 字段），
+        纯音乐曲目也只有 v1 接口会返回「纯音乐，请欣赏」占位文本。
+
+        Args:
+            track_id: 歌曲 ID。
+
+        Returns:
+            str: 行级 LRC 文本（获取失败返回空串）。
+        """
+
+        try:
+            response = shared_session().get(
+                "https://music.163.com/api/song/lyric/v1",
+                params={"id": track_id, "lv": 0, "kv": 0, "tv": 0, "yv": 0, "rv": 0},
+                headers=NetEaseMusic.HEADERS,
+                timeout=5
+            )
+            response.raise_for_status()
+            data = response.json()
+        except Exception as exc:
+            logger.warning(f"v1 歌词接口失败: {exc}")
+            return ""
+
+        for key in ("lrc", "yrc"):
+            text = normalize_lyric_text((data.get(key) or {}).get("lyric", ""))
+            if text and "[" in text:
+                return text
+
+        return ""
+
+    @staticmethod
     def fetch_lyrics_by_id(track_id):
         """直接通过歌曲 ID 获取 LRC 歌词与翻译歌词。
+
+        取词顺序：普通 lrc → yrc（逐字歌词）→ v1 接口兜底。
+        网易云会把相当一部分曲目的歌词只放进 yrc 字段，旧实现只读 lrc
+        会导致这类歌曲被误判为「没有可用 LRC」。
 
         Args:
             track_id: 歌曲 ID（字符串或整数）。
@@ -147,19 +349,42 @@ class NetEaseMusic:
             lyric_url = "https://music.163.com/api/song/lyric"
             response = shared_session().get(
                 lyric_url,
-                params={"id": track_id, "lv": 1, "kv": 1, "tv": 1},
+                params={"id": track_id, "lv": 1, "kv": 1, "tv": 1, "yv": 1, "rv": 1},
                 headers=NetEaseMusic.HEADERS,
                 timeout=5
             )
             response.raise_for_status()
             data = response.json()
-            lrc = data.get("lrc", {}).get("lyric", "")
+
+            trans = normalize_lyric_text(
+                (data.get("tlyric") or {}).get("lyric", "")
+            )
+
+            # 1. 普通 LRC
+            lrc = normalize_lyric_text((data.get("lrc") or {}).get("lyric", ""))
+
+            # 2. yrc 逐字歌词（lrc 为空时的主因）
+            if not lrc or "[" not in lrc:
+                yrc = normalize_lyric_text((data.get("yrc") or {}).get("lyric", ""))
+                if yrc and "[" in yrc:
+                    logger.info(f"ID {track_id} 使用 yrc 逐字歌词")
+                    lrc = yrc
+
             if lrc and "[" in lrc:
-                trans = data.get("tlyric", {}).get("lyric", "") or ""
+                clear_nolyric_cache(track_id)
                 return lrc, trans
-            else:
-                logger.info(f"ID {track_id} 没有可用 LRC")
-                return None, ""
+
+            # 3. v1 接口兜底（含纯音乐占位文本）
+            fallback = NetEaseMusic.fetch_lyrics_v1(track_id)
+            if fallback:
+                logger.info(f"ID {track_id} 使用 v1 接口歌词")
+                clear_nolyric_cache(track_id)
+                return fallback, trans
+
+            # 接口正常响应但确实没有歌词：记录标记，避免重复请求
+            logger.info(f"ID {track_id} 没有可用歌词")
+            save_nolyric_cache(track_id)
+            return None, ""
         except Exception as e:
             logger.error(f"通过 ID 获取歌词失败: {e}")
             return None, ""
@@ -183,6 +408,9 @@ class NeteaseSource(QObject):
 
     # 歌词获取失败返回失败通知
     lyrics_failed = Signal(str, str)
+
+    # 曲目确实没有歌词（与网络失败区分，界面提示不同）
+    lyrics_no_lyric = Signal(str, str)
 
     def __init__(self, parent=None):
         """
@@ -345,7 +573,13 @@ class NeteaseSource(QObject):
                         trans = fetched_trans
                         self._save_cached_trans(self._current_track_id, trans)
 
-            # 2. 缓存未命中，请求网络
+            # 2. 缓存未命中：先看是否已确认该曲目无歌词
+            if not lrc and has_nolyric_cache(self._current_track_id):
+                logger.info(f"命中无歌词缓存：{song} - {artist}")
+                self.bridge.result.emit(song, artist or "", "", "nolyric", "")
+                return
+
+            # 3. 请求网络
             if not lrc:
                 if self._current_track_id and self._current_track_id != "0":
                     lrc, trans = NetEaseMusic.fetch_lyrics_by_id(self._current_track_id)
@@ -358,7 +592,7 @@ class NeteaseSource(QObject):
                     if trans:
                         self._save_cached_trans(self._current_track_id, trans)
 
-            # 3. 发送结果
+            # 4. 发送结果
             self.bridge.result.emit(
                 song,
                 artist or "",
@@ -377,7 +611,7 @@ class NeteaseSource(QObject):
             song: 歌曲名称。
             artist: 歌手名称。
             lrc_text: LRC 歌词文本。
-            status: 请求结果状态，'ok' 或 'error'。
+            status: 请求结果状态，'ok' / 'nolyric' / 'error'。
             trans_text: 翻译歌词文本（LRC 格式，可为空）。
         """
 
@@ -393,6 +627,11 @@ class NeteaseSource(QObject):
 
         if result_song_key != self.current_song_key:
             logger.info(f"歌词返回时歌曲已变化，丢弃：{song} - {artist}")
+            return
+
+        if status == "nolyric":
+            logger.info(f"该歌曲暂无歌词：{song} - {artist}")
+            self.lyrics_no_lyric.emit(song, artist or "")
             return
 
         if status != "ok":

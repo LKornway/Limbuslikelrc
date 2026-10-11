@@ -56,6 +56,10 @@ def main():
         lambda: main_window.set_lyric_status("")
     )
 
+    # 网易云：曲目确实没有歌词时单独提示（与网络失败区分）
+    if hasattr(overlay.source, "lyrics_no_lyric"):
+        overlay.source.lyrics_no_lyric.connect(main_window.on_no_lyric)
+
     # 酷狗平台：歌词来源附带专辑封面（读取本地 AlbumImg 缓存）
     if platform == "kugou" and hasattr(overlay.source, "cover_ready"):
         overlay.source.cover_ready.connect(main_window._on_watcher_cover)
